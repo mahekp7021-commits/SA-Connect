@@ -1,0 +1,11 @@
+{
+  "name": "sa-connect",
+  "private": true,
+  "scripts": {
+    "firebase:deploy": "firebase deploy --only hosting,functions,firestore:rules",
+    "firebase:emulators": "firebase emulators:start"
+  },
+  "devDependencies": {
+    "firebase-tools": "^14.0.0"
+  }
+}
