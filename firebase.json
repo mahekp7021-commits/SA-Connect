@@ -12,13 +12,6 @@
     ],
     "rewrites": [
       {
-        "source": "/api/**",
-        "function": {
-          "functionId": "api",
-          "region": "asia-south1"
-        }
-      },
-      {
         "source": "/l/**",
         "destination": "/lead.html"
       }
