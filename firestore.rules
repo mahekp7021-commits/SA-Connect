@@ -2,60 +2,163 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    function isSignedIn() { return request.auth != null; }
-    function userProfile() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
-    function belongsToClient(clientId) { return isSignedIn() && userProfile().clientId == clientId; }
-    function isClientAdmin(clientId) { return isSignedIn() && userProfile().clientId == clientId && userProfile().role == "admin"; }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function userProfile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function belongsToClient(clientId) {
+      return isSignedIn() && userProfile().clientId == clientId;
+    }
+
+    function isClientAdmin(clientId) {
+      return isSignedIn()
+        && userProfile().clientId == clientId
+        && userProfile().role == "admin";
+    }
+
+    function validPublicLead() {
+      let page = get(
+        /databases/$(database)/documents/landingPages/$(request.resource.data.clientId)
+      ).data;
+
+      return request.auth == null
+        && page.enabled == true
+        && page.slug == request.resource.data.landingPageSlug
+        && request.resource.data.source == "landing_page"
+        && request.resource.data.channel == "web_form"
+        && request.resource.data.status == "new"
+        && request.resource.data.notes == ""
+        && request.resource.data.name is string
+        && request.resource.data.phone is string
+        && request.resource.data.email is string
+        && request.resource.data.state is string
+        && request.resource.data.city is string
+        && request.resource.data.requirement is string
+        && request.resource.data.clientId is string
+        && request.resource.data.landingPageSlug is string
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.name.size() >= 1
+        && request.resource.data.name.size() <= 120
+        && request.resource.data.phone.size() >= 7
+        && request.resource.data.phone.size() <= 20
+        && request.resource.data.email.size() <= 160
+        && request.resource.data.state.size() >= 1
+        && request.resource.data.state.size() <= 100
+        && request.resource.data.city.size() >= 1
+        && request.resource.data.city.size() <= 100
+        && request.resource.data.requirement.size() >= 1
+        && request.resource.data.requirement.size() <= 1000
+        && request.resource.data.keys().hasOnly([
+          "clientId",
+          "name",
+          "phone",
+          "email",
+          "state",
+          "city",
+          "requirement",
+          "source",
+          "channel",
+          "status",
+          "notes",
+          "landingPageSlug",
+          "createdAt"
+        ]);
+    }
 
     match /clients/{clientId} {
       allow read: if belongsToClient(clientId);
       allow update: if isClientAdmin(clientId);
       allow create, delete: if false;
     }
+
     match /users/{userId} {
-      allow read: if isSignedIn() && (request.auth.uid == userId || isClientAdmin(resource.data.clientId));
-      allow update: if isSignedIn() && request.resource.data.clientId == resource.data.clientId && (request.auth.uid == userId || isClientAdmin(resource.data.clientId));
+      allow read: if isSignedIn()
+        && (
+          request.auth.uid == userId
+          || isClientAdmin(resource.data.clientId)
+        );
+
+      allow update: if isSignedIn()
+        && request.resource.data.clientId == resource.data.clientId
+        && (
+          request.auth.uid == userId
+          || isClientAdmin(resource.data.clientId)
+        );
+
       allow create, delete: if false;
     }
+
     match /leads/{leadId} {
       allow read: if belongsToClient(resource.data.clientId);
-      allow create: if belongsToClient(request.resource.data.clientId);
-      allow update: if belongsToClient(resource.data.clientId) && request.resource.data.clientId == resource.data.clientId;
+
+      allow create: if belongsToClient(request.resource.data.clientId)
+        || validPublicLead();
+
+      allow update: if belongsToClient(resource.data.clientId)
+        && request.resource.data.clientId == resource.data.clientId;
+
       allow delete: if belongsToClient(resource.data.clientId);
     }
+
     match /landingPages/{clientId} {
-      allow read: if belongsToClient(clientId);
-      allow create, update: if belongsToClient(clientId) && request.resource.data.clientId == clientId;
+      allow read: if belongsToClient(clientId)
+        || resource.data.enabled == true;
+
+      allow create, update: if belongsToClient(clientId)
+        && request.resource.data.clientId == clientId;
+
       allow delete: if belongsToClient(clientId);
     }
+
     match /followUps/{followUpId} {
       allow read: if belongsToClient(resource.data.clientId);
       allow create: if belongsToClient(request.resource.data.clientId);
-      allow update: if belongsToClient(resource.data.clientId) && request.resource.data.clientId == resource.data.clientId;
+      allow update: if belongsToClient(resource.data.clientId)
+        && request.resource.data.clientId == resource.data.clientId;
       allow delete: if belongsToClient(resource.data.clientId);
     }
+
     match /messageTemplates/{templateId} {
       allow read: if belongsToClient(resource.data.clientId);
       allow create: if belongsToClient(request.resource.data.clientId);
-      allow update: if belongsToClient(resource.data.clientId) && request.resource.data.clientId == resource.data.clientId;
+      allow update: if belongsToClient(resource.data.clientId)
+        && request.resource.data.clientId == resource.data.clientId;
       allow delete: if belongsToClient(resource.data.clientId);
     }
+
     match /whatsappConversations/{conversationId} {
       allow read: if belongsToClient(resource.data.clientId);
       allow create, update: if belongsToClient(request.resource.data.clientId);
       allow delete: if belongsToClient(resource.data.clientId);
     }
+
     match /whatsappMessages/{messageId} {
       allow read: if belongsToClient(resource.data.clientId);
       allow create, update: if belongsToClient(request.resource.data.clientId);
       allow delete: if belongsToClient(resource.data.clientId);
     }
+
     match /whatsappContacts/{contactId} {
       allow read: if belongsToClient(resource.data.clientId);
-      allow create, update, delete: if belongsToClient(request.resource.data.clientId);
+      allow create, update, delete: if belongsToClient(resource.data.clientId);
     }
-    match /whatsappConnections/{phoneNumberId} { allow read, write: if false; }
-    match /whatsappQrConnections/{clientId} { allow read: if belongsToClient(clientId); allow write: if false; }
-    match /{document=**} { allow read, write: if false; }
+
+    match /whatsappConnections/{phoneNumberId} {
+      allow read, write: if false;
+    }
+
+    match /whatsappQrConnections/{clientId} {
+      allow read: if belongsToClient(clientId);
+      allow write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
   }
 }
