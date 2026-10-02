@@ -1,0 +1,61 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() { return request.auth != null; }
+    function userProfile() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
+    function belongsToClient(clientId) { return isSignedIn() && userProfile().clientId == clientId; }
+    function isClientAdmin(clientId) { return isSignedIn() && userProfile().clientId == clientId && userProfile().role == "admin"; }
+
+    match /clients/{clientId} {
+      allow read: if belongsToClient(clientId);
+      allow update: if isClientAdmin(clientId);
+      allow create, delete: if false;
+    }
+    match /users/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || isClientAdmin(resource.data.clientId));
+      allow update: if isSignedIn() && request.resource.data.clientId == resource.data.clientId && (request.auth.uid == userId || isClientAdmin(resource.data.clientId));
+      allow create, delete: if false;
+    }
+    match /leads/{leadId} {
+      allow read: if belongsToClient(resource.data.clientId);
+      allow create: if belongsToClient(request.resource.data.clientId);
+      allow update: if belongsToClient(resource.data.clientId) && request.resource.data.clientId == resource.data.clientId;
+      allow delete: if belongsToClient(resource.data.clientId);
+    }
+    match /landingPages/{clientId} {
+      allow read: if belongsToClient(clientId);
+      allow create, update: if belongsToClient(clientId) && request.resource.data.clientId == clientId;
+      allow delete: if belongsToClient(clientId);
+    }
+    match /followUps/{followUpId} {
+      allow read: if belongsToClient(resource.data.clientId);
+      allow create: if belongsToClient(request.resource.data.clientId);
+      allow update: if belongsToClient(resource.data.clientId) && request.resource.data.clientId == resource.data.clientId;
+      allow delete: if belongsToClient(resource.data.clientId);
+    }
+    match /messageTemplates/{templateId} {
+      allow read: if belongsToClient(resource.data.clientId);
+      allow create: if belongsToClient(request.resource.data.clientId);
+      allow update: if belongsToClient(resource.data.clientId) && request.resource.data.clientId == resource.data.clientId;
+      allow delete: if belongsToClient(resource.data.clientId);
+    }
+    match /whatsappConversations/{conversationId} {
+      allow read: if belongsToClient(resource.data.clientId);
+      allow create, update: if belongsToClient(request.resource.data.clientId);
+      allow delete: if belongsToClient(resource.data.clientId);
+    }
+    match /whatsappMessages/{messageId} {
+      allow read: if belongsToClient(resource.data.clientId);
+      allow create, update: if belongsToClient(request.resource.data.clientId);
+      allow delete: if belongsToClient(resource.data.clientId);
+    }
+    match /whatsappContacts/{contactId} {
+      allow read: if belongsToClient(resource.data.clientId);
+      allow create, update, delete: if belongsToClient(request.resource.data.clientId);
+    }
+    match /whatsappConnections/{phoneNumberId} { allow read, write: if false; }
+    match /whatsappQrConnections/{clientId} { allow read: if belongsToClient(clientId); allow write: if false; }
+    match /{document=**} { allow read, write: if false; }
+  }
+}
