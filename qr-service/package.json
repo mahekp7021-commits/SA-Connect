@@ -1,0 +1,16 @@
+{
+  "name": "sa-connect-qr-service",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20.0.0" },
+  "scripts": { "start": "node server.js", "check": "node --check server.js" },
+  "dependencies": {
+    "@hapi/boom": "^10.0.1",
+    "@whiskeysockets/baileys": "7.0.0-rc14",
+    "express": "^5.1.0",
+    "firebase-admin": "^13.6.0",
+    "pino": "^9.6.0",
+    "qrcode": "^1.5.4"
+  }
+}
