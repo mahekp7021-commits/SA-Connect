@@ -100,13 +100,21 @@ async function loadPage() {
 
   const db = firebase.firestore();
 
-  const snap = await db.collection("landingPages")
+  let snap = await db.collection("landingPages")
     .where("slug", "==", slug)
     .where("enabled", "==", true)
     .limit(1)
     .get();
 
-  if (snap.empty) throw new Error("Landing page not found or not published.");
+  // The public URL /l/{clientId} is also supported.
+  // This keeps the existing saved slug unchanged.
+  if (snap.empty) {
+    const clientDoc = await db.collection("landingPages").doc(slug).get();
+    if (!clientDoc.exists || clientDoc.data().enabled !== true) {
+      throw new Error("Landing page not found or not published.");
+    }
+    snap = { empty: false, docs: [clientDoc] };
+  }
 
   const page = snap.docs[0].data();
   const clientId = String(page.clientId || "").trim();
