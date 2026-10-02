@@ -1,1 +1,193 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>S&A Connect Lead Page</title><style>*{box-sizing:border-box}body{margin:0;background:#f5f7fb;color:#172033;font-family:Arial,sans-serif}.wrap{max-width:680px;margin:auto;padding:28px 18px 50px}.card{background:#fff;border-radius:22px;padding:24px;box-shadow:0 5px 20px rgba(23,32,51,.08);margin-top:18px}h1{margin:0;font-size:30px}.sub{color:#667085;line-height:1.5}label{display:block;font-size:13px;font-weight:700;margin:16px 0 7px}input,select,textarea{width:100%;padding:14px;border:1px solid #d0d5dd;border-radius:12px;font:inherit}textarea{min-height:120px}button{width:100%;margin-top:20px;padding:15px;border:0;border-radius:13px;background:#2563eb;color:#fff;font-size:16px;font-weight:700}.msg{margin-top:14px;padding:12px;border-radius:10px}.success{background:#e8f7ef;color:#087443}.error{background:#fee4e2;color:#b42318}.brand{font-size:13px;font-weight:700;color:#2563eb;margin-bottom:8px}.hp{position:absolute;left:-9999px}</style></head><body><div class="wrap"><div class="card"><div class="brand">S&A CONNECT</div><h1 id="businessName">Loading...</h1><p class="sub" id="pageName">Please wait...</p></div><div class="card"><h2>Send an Enquiry</h2><p class="sub">Fill in your details and our team will contact you.</p><form id="leadForm"><label>Name *</label><input name="name" maxlength="120" required><label>Mobile *</label><input name="phone" type="tel" maxlength="20" required><label>Email</label><input name="email" type="email" maxlength="160"><label>State / Union Territory *</label><select name="state" required><option value="">Select State / UT</option><option>Maharashtra</option><option>Delhi</option><option>Gujarat</option><option>Karnataka</option><option>Tamil Nadu</option><option>Telangana</option><option>Kerala</option><option>West Bengal</option><option>Uttar Pradesh</option><option>Rajasthan</option><option>Other</option></select><label>City *</label><input name="city" maxlength="100" required><label>Requirement *</label><textarea name="requirement" maxlength="1000" required></textarea><input class="hp" name="website" tabindex="-1" autocomplete="off"><button id="submitButton" type="submit">Submit Enquiry</button><div id="message" class="msg" style="display:none"></div></form></div></div><script>const params=new URLSearchParams(location.search);const slug=(params.get("slug")||location.pathname.split("/").filter(Boolean).pop()||"").trim();async function loadPage(){const r=await fetch("/api/landing-page?slug="+encodeURIComponent(slug));const d=await r.json();if(!r.ok)throw new Error(d.error||"Landing page unavailable.");document.title=d.businessName+" | Enquiry";businessName.textContent=d.businessName;pageName.textContent=d.pageName}function msg(t,ok){message.textContent=t;message.className="msg "+(ok?"success":"error");message.style.display="block"}leadForm.addEventListener("submit",async e=>{e.preventDefault();submitButton.disabled=true;const f=new FormData(leadForm);try{const r=await fetch("/api/submit-lead",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({slug,name:f.get("name"),phone:f.get("phone"),email:f.get("email"),state:f.get("state"),city:f.get("city"),requirement:f.get("requirement"),website:f.get("website")})});const d=await r.json();if(!r.ok)throw new Error(d.error||"Unable to submit enquiry.");leadForm.reset();msg("Thank you. Your enquiry has been submitted successfully.",true)}catch(e){msg(e.message||"Something went wrong.",false)}finally{submitButton.disabled=false}});loadPage().catch(e=>{businessName.textContent="Page unavailable";pageName.textContent=e.message;submitButton.disabled=true});</script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>S&A Connect Lead Page</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f5f7fb;color:#172033;font-family:Arial,sans-serif}
+.wrap{max-width:680px;margin:auto;padding:28px 18px 50px}
+.card{background:#fff;border-radius:22px;padding:24px;box-shadow:0 5px 20px rgba(23,32,51,.08);margin-top:18px}
+h1{margin:0;font-size:30px}
+.sub{color:#667085;line-height:1.5}
+label{display:block;font-size:13px;font-weight:700;margin:16px 0 7px}
+input,select,textarea{width:100%;padding:14px;border:1px solid #d0d5dd;border-radius:12px;font:inherit}
+textarea{min-height:120px}
+button{width:100%;margin-top:20px;padding:15px;border:0;border-radius:13px;background:#2563eb;color:#fff;font-size:16px;font-weight:700}
+button:disabled{opacity:.6}
+.msg{margin-top:14px;padding:12px;border-radius:10px}
+.success{background:#e8f7ef;color:#087443}
+.error{background:#fee4e2;color:#b42318}
+.brand{font-size:13px;font-weight:700;color:#2563eb;margin-bottom:8px}
+.hp{position:absolute;left:-9999px}
+</style>
+<script src="/__/firebase/12.7.0/firebase-app-compat.js"></script>
+<script src="/__/firebase/12.7.0/firebase-firestore-compat.js"></script>
+<script src="/__/firebase/init.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <div class="brand">S&A CONNECT</div>
+    <h1 id="businessName">Loading...</h1>
+    <p class="sub" id="pageName">Please wait...</p>
+  </div>
+
+  <div class="card">
+    <h2>Send an Enquiry</h2>
+    <p class="sub">Fill in your details and our team will contact you.</p>
+
+    <form id="leadForm">
+      <label>Name *</label>
+      <input name="name" maxlength="120" required>
+
+      <label>Mobile *</label>
+      <input name="phone" type="tel" maxlength="20" required>
+
+      <label>Email</label>
+      <input name="email" type="email" maxlength="160">
+
+      <label>State / Union Territory *</label>
+      <select name="state" required>
+        <option value="">Select State / UT</option>
+        <option>Maharashtra</option>
+        <option>Delhi</option>
+        <option>Gujarat</option>
+        <option>Karnataka</option>
+        <option>Tamil Nadu</option>
+        <option>Telangana</option>
+        <option>Kerala</option>
+        <option>West Bengal</option>
+        <option>Uttar Pradesh</option>
+        <option>Rajasthan</option>
+        <option>Other</option>
+      </select>
+
+      <label>City *</label>
+      <input name="city" maxlength="100" required>
+
+      <label>Requirement *</label>
+      <textarea name="requirement" maxlength="1000" required></textarea>
+
+      <input class="hp" name="website" tabindex="-1" autocomplete="off">
+      <button id="submitButton" type="submit">Submit Enquiry</button>
+      <div id="message" class="msg" style="display:none"></div>
+    </form>
+  </div>
+</div>
+
+<script>
+const params = new URLSearchParams(location.search);
+const slug = (params.get("slug") || location.pathname.split("/").filter(Boolean).pop() || "").trim();
+
+const businessNameEl = document.getElementById("businessName");
+const pageNameEl = document.getElementById("pageName");
+const leadForm = document.getElementById("leadForm");
+const submitButton = document.getElementById("submitButton");
+const messageEl = document.getElementById("message");
+
+let pageConfig = null;
+
+function showMessage(text, ok) {
+  messageEl.textContent = text;
+  messageEl.className = "msg " + (ok ? "success" : "error");
+  messageEl.style.display = "block";
+}
+
+async function loadPage() {
+  if (!slug) throw new Error("Landing page slug is missing.");
+
+  const db = firebase.firestore();
+
+  const snap = await db.collection("landingPages")
+    .where("slug", "==", slug)
+    .where("enabled", "==", true)
+    .limit(1)
+    .get();
+
+  if (snap.empty) throw new Error("Landing page not found or not published.");
+
+  const page = snap.docs[0].data();
+  const clientId = String(page.clientId || "").trim();
+
+  if (!clientId) throw new Error("Invalid landing page configuration.");
+
+  pageConfig = {
+    clientId,
+    slug,
+    pageName: page.pageName || "Contact Us",
+    businessName: page.businessName || page.ownerName || "Business"
+  };
+
+  businessNameEl.textContent = pageConfig.businessName;
+  pageNameEl.textContent = pageConfig.pageName;
+  document.title = pageConfig.businessName + " | Enquiry";
+}
+
+leadForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+
+  if (!pageConfig) {
+    showMessage("Landing page is not ready yet. Please refresh and try again.", false);
+    return;
+  }
+
+  submitButton.disabled = true;
+  const f = new FormData(leadForm);
+
+  try {
+    if (String(f.get("website") || "").trim()) {
+      throw new Error("Unable to submit enquiry.");
+    }
+
+    const name = String(f.get("name") || "").trim();
+    const phone = String(f.get("phone") || "").trim();
+    const email = String(f.get("email") || "").trim();
+    const state = String(f.get("state") || "").trim();
+    const city = String(f.get("city") || "").trim();
+    const requirement = String(f.get("requirement") || "").trim();
+
+    if (!name || !phone || !state || !city || !requirement) {
+      throw new Error("Please fill all required fields.");
+    }
+
+    if (phone.length < 7 || phone.length > 20) {
+      throw new Error("Please enter a valid mobile number.");
+    }
+
+    await firebase.firestore().collection("leads").add({
+      clientId: pageConfig.clientId,
+      name,
+      phone,
+      email,
+      state,
+      city,
+      requirement,
+      source: "landing_page",
+      channel: "web_form",
+      status: "new",
+      notes: "",
+      landingPageSlug: pageConfig.slug,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+
+    leadForm.reset();
+    showMessage("Thank you. Your enquiry has been submitted successfully.", true);
+  } catch (error) {
+    console.error(error);
+    showMessage(error.message || "Something went wrong. Please try again.", false);
+  } finally {
+    submitButton.disabled = false;
+  }
+});
+
+loadPage().catch((error) => {
+  console.error(error);
+  businessNameEl.textContent = "Page unavailable";
+  pageNameEl.textContent = error.message || "Unable to load this landing page.";
+  submitButton.disabled = true;
+});
+</script>
+</body>
+</html>
