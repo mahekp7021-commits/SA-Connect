@@ -123,7 +123,7 @@ async function loadPage() {
 
   pageConfig = {
     clientId,
-    slug,
+    slug: page.slug || slug,
     pageName: page.pageName || "Contact Us",
     businessName: page.businessName || page.ownerName || "Business"
   };
