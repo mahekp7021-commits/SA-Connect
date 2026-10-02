@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: sa-connect-qr-service
+    runtime: node
+    rootDir: qr-service
+    buildCommand: npm install
+    startCommand: npm start
+    plan: free
+    healthCheckPath: /health
