@@ -51,6 +51,12 @@ service cloud.firestore {
         && request.resource.data.message is string
         && request.resource.data.requirement is string
         && request.resource.data.notes is string
+        && request.resource.data.campaignId is string
+        && request.resource.data.campaignSource is string
+        && request.resource.data.campaignMedium is string
+        && request.resource.data.campaignId.size() <= 200
+        && request.resource.data.campaignSource.size() <= 100
+        && request.resource.data.campaignMedium.size() <= 100
         && request.resource.data.createdAt is timestamp
 
         && request.resource.data.name.size() >= 1
@@ -99,6 +105,9 @@ service cloud.firestore {
           "status",
           "notes",
           "landingPageSlug",
+          "campaignId",
+          "campaignSource",
+          "campaignMedium",
           "createdAt"
         ]);
     }
@@ -146,6 +155,21 @@ service cloud.firestore {
         && request.resource.data.clientId == clientId;
 
       allow delete: if belongsToClient(clientId);
+    }
+
+
+    match /campaigns/{campaignId} {
+      allow read: if belongsToClient(resource.data.clientId);
+      allow create: if belongsToClient(request.resource.data.clientId);
+      allow update: if belongsToClient(resource.data.clientId)
+        && request.resource.data.clientId == resource.data.clientId;
+      allow delete: if belongsToClient(resource.data.clientId);
+    }
+
+    match /leadTimeline/{timelineId} {
+      allow read: if belongsToClient(resource.data.clientId);
+      allow create: if belongsToClient(request.resource.data.clientId);
+      allow update, delete: if false;
     }
 
     match /followUps/{followUpId} {
