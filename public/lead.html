@@ -10,10 +10,11 @@ body{margin:0;background:#f5f7fb;color:#172033;font-family:Arial,sans-serif}
 .wrap{max-width:680px;margin:auto;padding:28px 18px 50px}
 .card{background:#fff;border-radius:22px;padding:24px;box-shadow:0 5px 20px rgba(23,32,51,.08);margin-top:18px}
 h1{margin:0;font-size:30px}
+h2{margin-top:0}
 .sub{color:#667085;line-height:1.5}
 label{display:block;font-size:13px;font-weight:700;margin:16px 0 7px}
-input,select,textarea{width:100%;padding:14px;border:1px solid #d0d5dd;border-radius:12px;font:inherit}
-textarea{min-height:120px}
+input,select,textarea{width:100%;padding:14px;border:1px solid #d0d5dd;border-radius:12px;font:inherit;background:#fff}
+textarea{min-height:120px;resize:vertical}
 button{width:100%;margin-top:20px;padding:15px;border:0;border-radius:13px;background:#2563eb;color:#fff;font-size:16px;font-weight:700}
 button:disabled{opacity:.6}
 .msg{margin-top:14px;padding:12px;border-radius:10px}
@@ -35,42 +36,122 @@ button:disabled{opacity:.6}
   </div>
 
   <div class="card">
-    <h2>Send an Enquiry</h2>
-    <p class="sub">Fill in your details and our team will contact you.</p>
+    <h2>Trader Enquiry</h2>
+    <p class="sub">Fill in your trading details and our team will contact you.</p>
 
     <form id="leadForm">
       <label>Name *</label>
       <input name="name" maxlength="120" required>
 
       <label>Mobile *</label>
-      <input name="phone" type="tel" maxlength="20" required>
+      <input name="phone" type="tel" maxlength="20" inputmode="tel" required>
 
-      <label>Email</label>
-      <input name="email" type="email" maxlength="160">
-
-      <label>State / Union Territory *</label>
-      <select name="state" required>
-        <option value="">Select State / UT</option>
-        <option>Maharashtra</option>
-        <option>Delhi</option>
-        <option>Gujarat</option>
-        <option>Karnataka</option>
-        <option>Tamil Nadu</option>
-        <option>Telangana</option>
-        <option>Kerala</option>
-        <option>West Bengal</option>
-        <option>Uttar Pradesh</option>
-        <option>Rajasthan</option>
-        <option>Other</option>
-      </select>
+      <label>Email *</label>
+      <input name="email" type="email" maxlength="160" required>
 
       <label>City *</label>
       <input name="city" maxlength="100" required>
 
-      <label>Requirement *</label>
-      <textarea name="requirement" maxlength="1000" required></textarea>
+      <label>State / Union Territory *</label>
+      <select name="state" required>
+        <option value="">Select State / UT</option>
+        <option>Andaman and Nicobar Islands</option>
+        <option>Andhra Pradesh</option>
+        <option>Arunachal Pradesh</option>
+        <option>Assam</option>
+        <option>Bihar</option>
+        <option>Chandigarh</option>
+        <option>Chhattisgarh</option>
+        <option>Dadra and Nagar Haveli and Daman and Diu</option>
+        <option>Delhi</option>
+        <option>Goa</option>
+        <option>Gujarat</option>
+        <option>Haryana</option>
+        <option>Himachal Pradesh</option>
+        <option>Jammu and Kashmir</option>
+        <option>Jharkhand</option>
+        <option>Karnataka</option>
+        <option>Kerala</option>
+        <option>Ladakh</option>
+        <option>Lakshadweep</option>
+        <option>Madhya Pradesh</option>
+        <option>Maharashtra</option>
+        <option>Manipur</option>
+        <option>Meghalaya</option>
+        <option>Mizoram</option>
+        <option>Nagaland</option>
+        <option>Odisha</option>
+        <option>Puducherry</option>
+        <option>Punjab</option>
+        <option>Rajasthan</option>
+        <option>Sikkim</option>
+        <option>Tamil Nadu</option>
+        <option>Telangana</option>
+        <option>Tripura</option>
+        <option>Uttar Pradesh</option>
+        <option>Uttarakhand</option>
+        <option>West Bengal</option>
+      </select>
+
+      <label>Trading Experience *</label>
+      <select name="tradingExperience" required>
+        <option value="">Select Trading Experience</option>
+        <option>Beginner</option>
+        <option>Less than 1 year</option>
+        <option>1-3 years</option>
+        <option>3-5 years</option>
+        <option>5+ years</option>
+      </select>
+
+      <label>Trader Status *</label>
+      <select name="traderStatus" required>
+        <option value="">Select Trader Status</option>
+        <option>Active Trader</option>
+        <option>Inactive Trader</option>
+        <option>Interested in Trading</option>
+        <option>Learning / Beginner</option>
+      </select>
+
+      <label>Loss Experience *</label>
+      <select name="lossExperience" required>
+        <option value="">Select Loss Experience</option>
+        <option>No Loss</option>
+        <option>Small Loss</option>
+        <option>Moderate Loss</option>
+        <option>Heavy Loss</option>
+        <option>Prefer Not to Say</option>
+      </select>
+
+      <label>Loss Segment *</label>
+      <select name="lossSegment" required>
+        <option value="">Select Loss Segment</option>
+        <option>Forex</option>
+        <option>Crypto</option>
+        <option>Stocks</option>
+        <option>Options</option>
+        <option>Commodities</option>
+        <option>Multiple Segments</option>
+      </select>
+
+      <label>Trading Capital *</label>
+      <select name="tradingCapital" required>
+        <option value="">Select Trading Capital</option>
+        <option>Below ₹50,000</option>
+        <option>₹50,000 - ₹1 Lakh</option>
+        <option>₹1 Lakh - ₹5 Lakhs</option>
+        <option>₹5 Lakhs - ₹10 Lakhs</option>
+        <option>Above ₹10 Lakhs</option>
+        <option>Prefer Not to Say</option>
+      </select>
+
+      <label>Topic *</label>
+      <input name="topic" maxlength="200" required>
+
+      <label>Message *</label>
+      <textarea name="message" maxlength="1000" required></textarea>
 
       <input class="hp" name="website" tabindex="-1" autocomplete="off">
+
       <button id="submitButton" type="submit">Submit Enquiry</button>
       <div id="message" class="msg" style="display:none"></div>
     </form>
@@ -98,35 +179,23 @@ function showMessage(text, ok) {
 async function loadPage() {
   if (!slug) throw new Error("Landing page slug is missing.");
 
-  const db = firebase.firestore();
+  const response = await fetch("/api/landing-page?slug=" + encodeURIComponent(slug));
+  const data = await response.json();
 
-  let snap = await db.collection("landingPages")
-    .where("slug", "==", slug)
-    .where("enabled", "==", true)
-    .limit(1)
-    .get();
-
-  // The public URL /l/{clientId} is also supported.
-  // This keeps the existing saved slug unchanged.
-  if (snap.empty) {
-    const clientDoc = await db.collection("landingPages").doc(slug).get();
-    if (!clientDoc.exists || clientDoc.data().enabled !== true) {
-      throw new Error("Landing page not found or not published.");
-    }
-    snap = { empty: false, docs: [clientDoc] };
+  if (!response.ok) {
+    throw new Error(data.error || "Landing page not found.");
   }
 
-  const page = snap.docs[0].data();
-  const clientId = String(page.clientId || "").trim();
-
-  if (!clientId) throw new Error("Invalid landing page configuration.");
-
   pageConfig = {
-    clientId,
-    slug: page.slug || slug,
-    pageName: page.pageName || "Contact Us",
-    businessName: page.businessName || page.ownerName || "Business"
+    clientId: String(data.clientId || "").trim(),
+    slug: String(data.slug || slug).trim(),
+    pageName: data.pageName || "Contact Us",
+    businessName: data.businessName || "Business"
   };
+
+  if (!pageConfig.clientId) {
+    throw new Error("Invalid landing page configuration.");
+  }
 
   businessNameEl.textContent = pageConfig.businessName;
   pageNameEl.textContent = pageConfig.pageName;
@@ -149,39 +218,59 @@ leadForm.addEventListener("submit", async (e) => {
       throw new Error("Unable to submit enquiry.");
     }
 
-    const name = String(f.get("name") || "").trim();
-    const phone = String(f.get("phone") || "").trim();
-    const email = String(f.get("email") || "").trim();
-    const state = String(f.get("state") || "").trim();
-    const city = String(f.get("city") || "").trim();
-    const requirement = String(f.get("requirement") || "").trim();
+    const payload = {
+      slug: pageConfig.slug,
+      name: String(f.get("name") || "").trim(),
+      phone: String(f.get("phone") || "").trim(),
+      email: String(f.get("email") || "").trim(),
+      city: String(f.get("city") || "").trim(),
+      state: String(f.get("state") || "").trim(),
+      tradingExperience: String(f.get("tradingExperience") || "").trim(),
+      traderStatus: String(f.get("traderStatus") || "").trim(),
+      lossExperience: String(f.get("lossExperience") || "").trim(),
+      lossSegment: String(f.get("lossSegment") || "").trim(),
+      tradingCapital: String(f.get("tradingCapital") || "").trim(),
+      topic: String(f.get("topic") || "").trim(),
+      message: String(f.get("message") || "").trim(),
+      website: ""
+    };
 
-    if (!name || !phone || !state || !city || !requirement) {
+    if (
+      !payload.name ||
+      !payload.phone ||
+      !payload.email ||
+      !payload.city ||
+      !payload.state ||
+      !payload.tradingExperience ||
+      !payload.traderStatus ||
+      !payload.lossExperience ||
+      !payload.lossSegment ||
+      !payload.tradingCapital ||
+      !payload.topic ||
+      !payload.message
+    ) {
       throw new Error("Please fill all required fields.");
     }
 
-    if (phone.length < 7 || phone.length > 20) {
+    if (payload.phone.length < 7 || payload.phone.length > 20) {
       throw new Error("Please enter a valid mobile number.");
     }
 
-    await firebase.firestore().collection("leads").add({
-      clientId: pageConfig.clientId,
-      name,
-      phone,
-      email,
-      state,
-      city,
-      requirement,
-      source: "landing_page",
-      channel: "web_form",
-      status: "new",
-      notes: "",
-      landingPageSlug: pageConfig.slug,
-      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    const response = await fetch("/api/submit-lead", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
     });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(result.error || "Unable to submit enquiry.");
+    }
 
     leadForm.reset();
     showMessage("Thank you. Your enquiry has been submitted successfully.", true);
+
   } catch (error) {
     console.error(error);
     showMessage(error.message || "Something went wrong. Please try again.", false);
