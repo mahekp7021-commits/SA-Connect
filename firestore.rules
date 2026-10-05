@@ -39,9 +39,17 @@ service cloud.firestore {
         && request.resource.data.state is string
         && request.resource.data.city is string
         && request.resource.data.requirement is string
+        && request.resource.data.tradingExperience is string
+        && request.resource.data.traderStatus is string
+        && request.resource.data.lossExperience is string
+        && request.resource.data.lossSegment is string
+        && request.resource.data.tradingCapital is string
+        && request.resource.data.topic is string
+        && request.resource.data.message is string
         && request.resource.data.clientId is string
         && request.resource.data.landingPageSlug is string
         && request.resource.data.createdAt is timestamp
+
         && request.resource.data.name.size() >= 1
         && request.resource.data.name.size() <= 120
         && request.resource.data.phone.size() >= 7
@@ -53,6 +61,21 @@ service cloud.firestore {
         && request.resource.data.city.size() <= 100
         && request.resource.data.requirement.size() >= 1
         && request.resource.data.requirement.size() <= 1000
+        && request.resource.data.tradingExperience.size() >= 1
+        && request.resource.data.tradingExperience.size() <= 100
+        && request.resource.data.traderStatus.size() >= 1
+        && request.resource.data.traderStatus.size() <= 100
+        && request.resource.data.lossExperience.size() >= 1
+        && request.resource.data.lossExperience.size() <= 100
+        && request.resource.data.lossSegment.size() >= 1
+        && request.resource.data.lossSegment.size() <= 100
+        && request.resource.data.tradingCapital.size() >= 1
+        && request.resource.data.tradingCapital.size() <= 100
+        && request.resource.data.topic.size() >= 1
+        && request.resource.data.topic.size() <= 200
+        && request.resource.data.message.size() >= 1
+        && request.resource.data.message.size() <= 1000
+
         && request.resource.data.keys().hasOnly([
           "clientId",
           "name",
@@ -60,6 +83,13 @@ service cloud.firestore {
           "email",
           "state",
           "city",
+          "tradingExperience",
+          "traderStatus",
+          "lossExperience",
+          "lossSegment",
+          "tradingCapital",
+          "topic",
+          "message",
           "requirement",
           "source",
           "channel",
