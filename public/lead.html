@@ -156,21 +156,23 @@ function showMessage(text, ok) {
 async function loadPage() {
   if (!slug) throw new Error("Landing page slug is missing.");
 
-  // Query only by slug so the public landing page does not
-  // require a composite Firestore index.
-  const snap = await db.collection("landingPages")
-    .where("slug", "==", slug)
-    .limit(1)
-    .get();
+  // Public landing pages are stored with the clientId as the
+  // Firestore document ID. Reading the document directly avoids
+  // a collection query that anonymous users cannot authorize.
+  const docSnap = await db.collection("landingPages").doc(slug).get();
 
-  if (snap.empty) {
+  if (!docSnap.exists) {
     throw new Error("Landing page not found.");
   }
 
-  const data = snap.docs[0].data();
+  const data = docSnap.data();
 
   if (data.enabled !== true) {
     throw new Error("This landing page is not published.");
+  }
+
+  if (String(data.slug || slug).trim() !== slug) {
+    throw new Error("Landing page URL is invalid.");
   }
 
   pageConfig = {
