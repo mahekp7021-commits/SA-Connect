@@ -171,12 +171,11 @@ async function loadPage() {
     throw new Error("This landing page is not published.");
   }
 
-  if (String(data.slug || slug).trim() !== slug) {
-    throw new Error("Landing page URL is invalid.");
-  }
-
   pageConfig = {
     clientId: String(data.clientId || "").trim(),
+    // The public URL may use the client document ID while the
+    // landing page document keeps its own slug. Use the published
+    // Firestore slug for lead validation.
     slug: String(data.slug || slug).trim(),
     pageName: String(data.pageName || "Contact Us"),
     businessName: String(data.businessName || "Business")
