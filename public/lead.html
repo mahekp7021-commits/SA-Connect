@@ -253,7 +253,7 @@ leadForm.addEventListener("submit", async (e) => {
       status: "new",
       notes: "",
       landingPageSlug: pageConfig.slug,
-      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      createdAt: firebase.firestore.Timestamp.now()
     };
 
     await db.collection("leads").add(leadData);
