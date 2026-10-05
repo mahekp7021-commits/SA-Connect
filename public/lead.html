@@ -23,9 +23,8 @@ button:disabled{opacity:.6}
 .brand{font-size:13px;font-weight:700;color:#2563eb;margin-bottom:8px}
 .hp{position:absolute;left:-9999px}
 </style>
-<script src="/__/firebase/8.10.1/firebase-app.js"></script>
-<script src="/__/firebase/8.10.1/firebase-firestore.js"></script>
-<script src="/__/firebase/init.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
 </head>
 <body>
 <div class="wrap">
@@ -123,6 +122,19 @@ button:disabled{opacity:.6}
 </div>
 
 <script>
+const firebaseConfig = {
+  apiKey: "AIzaSyBzpQxtnj2uKVoqBW8SNUWy1M3SdiVpfSg",
+  authDomain: "sa-connect-844ce.firebaseapp.com",
+  projectId: "sa-connect-844ce",
+  storageBucket: "sa-connect-844ce.firebasestorage.app",
+  messagingSenderId: "282155237764",
+  appId: "1:282155237764:web:7d16d7d4d4a94687e85dd1"
+};
+
+if (!firebase.apps.length) {
+  firebase.initializeApp(firebaseConfig);
+}
+
 const db = firebase.firestore();
 const slug = (new URLSearchParams(location.search).get("slug") ||
   location.pathname.split("/").filter(Boolean).pop() || "").trim();
