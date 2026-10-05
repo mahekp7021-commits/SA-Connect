@@ -28,17 +28,20 @@ service cloud.firestore {
 
       return request.auth == null
         && page.enabled == true
+        && page.clientId == request.resource.data.clientId
         && page.slug == request.resource.data.landingPageSlug
+
         && request.resource.data.source == "landing_page"
         && request.resource.data.channel == "web_form"
         && request.resource.data.status == "new"
-        && request.resource.data.notes == ""
+
+        && request.resource.data.clientId is string
+        && request.resource.data.landingPageSlug is string
         && request.resource.data.name is string
         && request.resource.data.phone is string
         && request.resource.data.email is string
         && request.resource.data.state is string
         && request.resource.data.city is string
-        && request.resource.data.requirement is string
         && request.resource.data.tradingExperience is string
         && request.resource.data.traderStatus is string
         && request.resource.data.lossExperience is string
@@ -46,8 +49,8 @@ service cloud.firestore {
         && request.resource.data.tradingCapital is string
         && request.resource.data.topic is string
         && request.resource.data.message is string
-        && request.resource.data.clientId is string
-        && request.resource.data.landingPageSlug is string
+        && request.resource.data.requirement is string
+        && request.resource.data.notes is string
         && request.resource.data.createdAt is timestamp
 
         && request.resource.data.name.size() >= 1
@@ -59,8 +62,6 @@ service cloud.firestore {
         && request.resource.data.state.size() <= 100
         && request.resource.data.city.size() >= 1
         && request.resource.data.city.size() <= 100
-        && request.resource.data.requirement.size() >= 1
-        && request.resource.data.requirement.size() <= 1000
         && request.resource.data.tradingExperience.size() >= 1
         && request.resource.data.tradingExperience.size() <= 100
         && request.resource.data.traderStatus.size() >= 1
@@ -75,6 +76,8 @@ service cloud.firestore {
         && request.resource.data.topic.size() <= 200
         && request.resource.data.message.size() >= 1
         && request.resource.data.message.size() <= 1000
+        && request.resource.data.requirement.size() >= 1
+        && request.resource.data.requirement.size() <= 1000
 
         && request.resource.data.keys().hasOnly([
           "clientId",
