@@ -64,25 +64,25 @@ service cloud.firestore {
         && request.resource.data.phone.size() >= 7
         && request.resource.data.phone.size() <= 20
         && request.resource.data.email.size() <= 160
-        && request.resource.data.state.size() >= 1
+        && request.resource.data.state.size()
         && request.resource.data.state.size() <= 100
-        && request.resource.data.city.size() >= 1
+        && request.resource.data.city.size()
         && request.resource.data.city.size() <= 100
-        && request.resource.data.tradingExperience.size() >= 1
+        && request.resource.data.tradingExperience.size()
         && request.resource.data.tradingExperience.size() <= 100
-        && request.resource.data.traderStatus.size() >= 1
+        && request.resource.data.traderStatus.size()
         && request.resource.data.traderStatus.size() <= 100
-        && request.resource.data.lossExperience.size() >= 1
+        && request.resource.data.lossExperience.size()
         && request.resource.data.lossExperience.size() <= 100
-        && request.resource.data.lossSegment.size() >= 1
+        && request.resource.data.lossSegment.size()
         && request.resource.data.lossSegment.size() <= 100
-        && request.resource.data.tradingCapital.size() >= 1
+        && request.resource.data.tradingCapital.size()
         && request.resource.data.tradingCapital.size() <= 100
-        && request.resource.data.topic.size() >= 1
+        && request.resource.data.topic.size()
         && request.resource.data.topic.size() <= 200
-        && request.resource.data.message.size() >= 1
+        && request.resource.data.message.size()
         && request.resource.data.message.size() <= 1000
-        && request.resource.data.requirement.size() >= 1
+        && request.resource.data.requirement.size()
         && request.resource.data.requirement.size() <= 1000
 
         && request.resource.data.keys().hasOnly([
