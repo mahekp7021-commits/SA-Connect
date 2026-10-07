@@ -30,10 +30,15 @@ function toEvent(req) {
   const protocol = req.headers["x-forwarded-proto"] || "https";
   const host = req.headers.host || "localhost";
   const rawUrl = `${protocol}://${host}${req.originalUrl || req.url || "/"}`;
+  const rawBody = Buffer.isBuffer(req.rawBody)
+    ? req.rawBody.toString("utf8")
+    : (typeof req.body === "string" ? req.body : JSON.stringify(req.body ?? {}));
+
   return {
     httpMethod: req.method,
     headers: req.headers || {},
-    body: typeof req.body === "string" ? req.body : (req.body == null ? "" : JSON.stringify(req.body)),
+    body: rawBody,
+    rawBody,
     rawUrl,
     url: rawUrl,
     queryStringParameters: req.query || {}
