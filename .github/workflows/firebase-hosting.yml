@@ -33,3 +33,5 @@ jobs:
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
         run: firebase deploy --only hosting --project sa-connect-844ce --non-interactive
+
+# Hosting deployment workflow for sa-connect-844ce
