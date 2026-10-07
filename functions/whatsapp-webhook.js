@@ -128,7 +128,7 @@ export async function handler(event){
         }
 
         for(const msg of value.messages||[]){
-          const phone=String(msg.from||"").replace(/\\D/g,"");
+          const phone=String(msg.from||"").replace(/\D/g,"");
           if(!phone) continue;
 
           const cid=conversationId(clientId,phone);
