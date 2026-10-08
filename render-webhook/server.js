@@ -242,6 +242,14 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === "GET" && req.url === "/api/admin/clients") {
+      await verifySuperAdmin(req);
+      const snap = await db().collection("clients").orderBy("createdAt", "desc").limit(100).get();
+      const clients = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      json(res, 200, { clients });
+      return;
+    }
+
     if (req.method === "POST" && req.url === "/api/admin/clients") {
       await verifySuperAdmin(req);
       const { body } = await readJson(req);
