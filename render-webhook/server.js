@@ -717,8 +717,26 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && req.url === "/api/admin/clients") {
       await verifySuperAdmin(req);
-      const snap = await db().collection("clients").orderBy("createdAt", "desc").limit(100).get();
-      const clients = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const firestore = db();
+      const snap = await firestore.collection("clients").orderBy("createdAt", "desc").limit(100).get();
+      const clients = await Promise.all(snap.docs.map(async doc => {
+        const c = { id: doc.id, ...doc.data() };
+        const [sessionSnap, apiSnap] = await Promise.all([
+          firestore.collection("openwaSessions").where("clientId", "==", c.clientId || doc.id).limit(1).get(),
+          firestore.collection("openwaApiClientConfigs").doc(c.clientId || doc.id).get()
+        ]);
+        const session = sessionSnap.empty ? null : sessionSnap.docs[0].data();
+        const apiConfig = apiSnap.exists ? apiSnap.data() : null;
+        c.openwa = {
+          connected: !!(session && ["open", "connected", "ready"].includes(String(session.status || "").toLowerCase())),
+          sessionId: String(apiConfig?.sessionId || session?.sessionId || (sessionSnap.empty ? "" : sessionSnap.docs[0].id)),
+          status: String(session?.status || apiConfig?.status || "not_connected"),
+          baseUrl: String(apiConfig?.baseUrl || OPENWA_BASE_URL || ""),
+          configured: !!(session || apiConfig),
+          provider: String(apiConfig?.provider || (session ? "openwa" : ""))
+        };
+        return c;
+      }));
       json(res, 200, { clients });
       return;
     }
