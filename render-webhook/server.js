@@ -221,7 +221,7 @@ async function processOutgoing(body) {
   const firestore = db();
   const cid = conversationId(clientId, phone);
   const now = FieldValue.serverTimestamp();
-  const messageId = String(result?.id || result?.message?.id || `out_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`);
+  const messageId = String(result?.messageId || result?.id || result?.message?.id || `out_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`);
 
   await firestore.collection("whatsappMessages").doc(safeDocId(messageId)).set({
     clientId, conversationId: cid, phone, text, body: text, type: "text",
