@@ -6,7 +6,6 @@ import { getFirestore, FieldValue } from "firebase-admin/firestore";
 
 const PORT = Number(process.env.PORT || 10000);
 const WEBHOOK_SECRET = String(process.env.OPENWA_WEBHOOK_SECRET || "").trim();
-const DEFAULT_CLIENT_ID = String(process.env.SA_CONNECT_CLIENT_ID || "").trim();
 const DEFAULT_SESSION_ID = String(process.env.OPENWA_SESSION_ID || "sa-connect").trim();
 const OPENWA_BASE_URL = String(process.env.OPENWA_BASE_URL || "").replace(/\/$/, "");
 const OPENWA_API_KEY = String(process.env.OPENWA_API_KEY || "").trim();
@@ -576,5 +575,4 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`S&A Connect OpenWA service listening on 0.0.0.0:${PORT}`);
   console.log(`OpenWA session: ${DEFAULT_SESSION_ID}`);
-  console.log(`Default client configured: ${DEFAULT_CLIENT_ID ? "yes" : "no"}`);
 });
