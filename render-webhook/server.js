@@ -71,11 +71,12 @@ function verifyOpenWASignature(rawBody, signature) {
 }
 
 async function resolveClientId(payload) {
-  if (DEFAULT_CLIENT_ID) return DEFAULT_CLIENT_ID;
-  const sessionId = String(payload.sessionId || DEFAULT_SESSION_ID).trim();
+  const sessionId = String(payload.sessionId || payload.data?.sessionId || DEFAULT_SESSION_ID).trim();
   const snap = await db().collection("openwaSessions").doc(sessionId).get();
   if (snap.exists && snap.data()?.clientId) return String(snap.data().clientId);
-  throw new Error("SA_CONNECT_CLIENT_ID is not configured for this OpenWA session.");
+  // Legacy single-client fallback only. Remove SA_CONNECT_CLIENT_ID for multi-client production.
+  if (DEFAULT_CLIENT_ID) return DEFAULT_CLIENT_ID;
+  throw new Error("No client is mapped to OpenWA session " + sessionId + ".");
 }
 
 async function processIncoming(payload) {
