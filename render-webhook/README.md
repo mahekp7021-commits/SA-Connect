@@ -116,6 +116,6 @@ Generate the encryption key in a secure terminal using `openssl rand -hex 32`. N
 - `GET /api/whatsapp/openwa/qr` retrieves that session's QR image.
 - `POST /api/whatsapp/openwa/send` sends through that client's OpenWA session.
 
-OpenWA session documents are stored in `openwaSessions/{sessionId}` with a `clientId`. Incoming routing checks this mapping first. Remove `SA_CONNECT_CLIENT_ID` from Render when multi-client QR routing is ready; it remains only as a backwards-compatibility fallback for legacy unmapped sessions.
+OpenWA session documents are stored in `openwaSessions/{sessionId}` with a `clientId`. Incoming routing checks this mapping first. Do not set `SA_CONNECT_CLIENT_ID`. Unmapped OpenWA sessions are rejected rather than routed to a default tenant.
 
 The Android app's integration screen is available from More → Official WhatsApp Business API and More → WhatsApp QR Connection. The Firebase-hosted integration settings page is also served at `/whatsapp`.
