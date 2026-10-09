@@ -74,8 +74,7 @@ async function resolveClientId(payload) {
   const sessionId = String(payload.sessionId || payload.data?.sessionId || DEFAULT_SESSION_ID).trim();
   const snap = await db().collection("openwaSessions").doc(sessionId).get();
   if (snap.exists && snap.data()?.clientId) return String(snap.data().clientId);
-  // Legacy single-client fallback only. Remove SA_CONNECT_CLIENT_ID for multi-client production.
-  if (DEFAULT_CLIENT_ID) return DEFAULT_CLIENT_ID;
+  // Never route an unmapped session to another tenant. Map every session explicitly.
   throw new Error("No client is mapped to OpenWA session " + sessionId + ".");
 }
 
