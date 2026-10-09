@@ -24,6 +24,22 @@ function auth() { initFirebase(); return getAuth(); }
 function normalizePhone(value = "") { return String(value).replace(/\D/g, ""); }
 function conversationId(clientId, phone) { return `${clientId}_${normalizePhone(phone)}`; }
 
+const ALLOWED_ORIGINS = new Set([
+  "https://sa-connect-844ce.web.app",
+  "https://sa-connect-844ce.firebaseapp.com"
+]);
+
+function applyCors(req, res) {
+  const origin = String(req.headers.origin || "");
+  if (ALLOWED_ORIGINS.has(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+  }
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-OpenWA-Signature");
+  res.setHeader("Access-Control-Max-Age", "86400");
+}
+
 function json(res, status, data) {
   res.writeHead(status, { "Content-Type": "application/json" });
   res.end(JSON.stringify(data));
@@ -225,6 +241,12 @@ async function processOutgoing(body) {
 }
 
 const server = http.createServer(async (req, res) => {
+  applyCors(req, res);
+  if (req.method === "OPTIONS") {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
   try {
     if (req.method === "GET" && req.url === "/health") {
       json(res, 200, { ok: true, service: "sa-connect-openwa-webhook" });
