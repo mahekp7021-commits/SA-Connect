@@ -240,6 +240,171 @@ async function processOutgoing(body) {
   return { ok: true, clientId, conversationId: cid, messageId, openwa: result };
 }
 
+
+// ----- Separate Meta Cloud API and tenant-scoped OpenWA QR integrations -----
+async function verifyClientUser(req) {
+  const header = String(req.headers.authorization || "");
+  if (!header.startsWith("Bearer ")) throw new Error("Missing Firebase ID token.");
+  const decoded = await auth().verifyIdToken(header.slice(7).trim());
+  const profile = await db().collection("users").doc(decoded.uid).get();
+  if (!profile.exists || !profile.data()?.clientId) throw new Error("No client workspace is linked to this user.");
+  return { decoded, profile: profile.data(), clientId: String(profile.data().clientId) };
+}
+function metaEncryptionKey() {
+  const value = String(process.env.META_CREDENTIAL_ENCRYPTION_KEY || "").trim();
+  if (!/^[0-9a-fA-F]{64}$/.test(value)) throw new Error("META_CREDENTIAL_ENCRYPTION_KEY must be a 32-byte key encoded as 64 hex characters.");
+  return Buffer.from(value, "hex");
+}
+function encryptMetaToken(plain) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", metaEncryptionKey(), iv);
+  const data = Buffer.concat([cipher.update(String(plain), "utf8"), cipher.final()]);
+  return { iv: iv.toString("hex"), data: data.toString("hex"), tag: cipher.getAuthTag().toString("hex") };
+}
+function decryptMetaToken(value) {
+  if (!value?.iv || !value?.data || !value?.tag) throw new Error("Meta access token is not configured.");
+  const decipher = crypto.createDecipheriv("aes-256-gcm", metaEncryptionKey(), Buffer.from(value.iv, "hex"));
+  decipher.setAuthTag(Buffer.from(value.tag, "hex"));
+  return Buffer.concat([decipher.update(Buffer.from(value.data, "hex")), decipher.final()]).toString("utf8");
+}
+async function openwaRequest(path, options = {}) {
+  if (!OPENWA_BASE_URL || !OPENWA_API_KEY) throw new Error("OpenWA service URL/API key is not configured on the server.");
+  const response = await fetch(OPENWA_BASE_URL + path, {
+    ...options,
+    headers: { "Content-Type": "application/json", "X-API-Key": OPENWA_API_KEY, ...(options.headers || {}) }
+  });
+  const raw = await response.text();
+  let data = {};
+  try { data = JSON.parse(raw || "{}"); } catch { data = { raw }; }
+  if (!response.ok) throw new Error("OpenWA request failed (" + response.status + "): " + raw.slice(0, 300));
+  return data;
+}
+async function getClientOpenWASession(clientId) {
+  const snap = await db().collection("openwaSessions").where("clientId", "==", clientId).limit(1).get();
+  if (snap.empty) return null;
+  return { sessionId: snap.docs[0].id, ...snap.docs[0].data() };
+}
+async function createClientOpenWASession(clientId, uid) {
+  const existing = await getClientOpenWASession(clientId);
+  if (existing) return existing;
+  if (!WEBHOOK_SECRET) throw new Error("OPENWA_WEBHOOK_SECRET is not configured.");
+  const publicBase = String(process.env.PUBLIC_API_BASE_URL || "").replace(/\/$/, "");
+  if (!publicBase) throw new Error("PUBLIC_API_BASE_URL must be set to this Render webhook service URL.");
+  const safeClient = clientId.toLowerCase().replace(/[^a-z0-9_-]/g, "-").slice(0, 24) || "client";
+  const sessionId = "sanc-" + safeClient + "-" + crypto.randomBytes(3).toString("hex");
+  await openwaRequest("/api/sessions", { method: "POST", body: JSON.stringify({ id: sessionId, name: "S&A Connect " + clientId }) });
+  const webhook = await openwaRequest("/api/sessions/" + encodeURIComponent(sessionId) + "/webhooks", {
+    method: "POST",
+    body: JSON.stringify({
+      url: publicBase + "/webhook/openwa",
+      events: ["message.received", "message.ack", "session.disconnected"],
+      secret: WEBHOOK_SECRET
+    })
+  });
+  await db().collection("openwaSessions").doc(sessionId).set({
+    clientId, sessionId, status: "connecting", webhookId: String(webhook.id || ""),
+    createdBy: uid, createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp()
+  });
+  return { sessionId, clientId, status: "connecting", webhookId: String(webhook.id || "") };
+}
+async function processMetaWebhook(payload) {
+  const firestore = db();
+  let processed = 0;
+  for (const entry of payload?.entry || []) {
+    for (const change of entry?.changes || []) {
+      if (change?.field !== "messages") continue;
+      const value = change.value || {};
+      const phoneNumberId = String(value.metadata?.phone_number_id || "");
+      if (!phoneNumberId) continue;
+      const config = await firestore.collection("metaWhatsAppPhoneNumbers").doc(phoneNumberId).get();
+      if (!config.exists || !config.data()?.clientId) continue;
+      const clientId = String(config.data().clientId);
+      const contacts = new Map((value.contacts || []).map(c => [String(c.wa_id || ""), c]));
+      for (const message of value.messages || []) {
+        const phone = normalizePhone(message.from || "");
+        if (!phone) continue;
+        const contactName = String(contacts.get(phone)?.profile?.name || phone);
+        const text = message.type === "text" ? String(message.text?.body || "") :
+          message.type === "image" ? String(message.image?.caption || "[Image]") :
+          message.type === "video" ? String(message.video?.caption || "[Video]") :
+          message.type === "document" ? String(message.document?.caption || "[Document]") :
+          message.type === "audio" ? "[Audio]" : "[" + String(message.type || "message") + "]";
+        const cid = conversationId(clientId, phone);
+        const wamid = String(message.id || (cid + "_" + Date.now()));
+        const msgRef = firestore.collection("whatsappMessages").doc(safeDocId("meta:" + wamid));
+        if ((await msgRef.get()).exists) continue;
+        const now = FieldValue.serverTimestamp();
+        await msgRef.set({
+          clientId, conversationId: cid, phone, text, body: text, type: String(message.type || "text"),
+          direction: "inbound", fromCustomer: true, fromMe: false, status: "received",
+          messageId: wamid, timestamp: now, createdAt: now, source: "whatsapp_meta",
+          channel: "whatsapp_business_platform", metaPhoneNumberId: phoneNumberId, metaWabaId: String(entry.id || "")
+        });
+        await firestore.collection("whatsappConversations").doc(cid).set({
+          clientId, phone, contactName, lastMessage: text, lastMessageAt: now,
+          unreadCount: FieldValue.increment(1), source: "whatsapp_meta",
+          channel: "whatsapp_business_platform", updatedAt: now
+        }, { merge: true });
+        const leads = await firestore.collection("leads").where("clientId", "==", clientId).where("phone", "==", phone).limit(1).get();
+        let leadId = "";
+        if (!leads.empty) {
+          leadId = leads.docs[0].id;
+          await leads.docs[0].ref.set({ name: contactName, phone, source: "whatsapp_meta", channel: "whatsapp_business_platform", requirement: text, message: text, updatedAt: now }, { merge: true });
+        } else {
+          const lead = await firestore.collection("leads").add({
+            clientId, name: contactName, phone, email: "", state: "", city: "", requirement: text, message: text,
+            source: "whatsapp_meta", channel: "whatsapp_business_platform", status: "new", notes: "", tag: "",
+            priority: "normal", budget: "", leadType: "whatsapp", createdAt: now, updatedAt: now
+          });
+          leadId = lead.id;
+        }
+        await firestore.collection("leadTimeline").add({
+          clientId, leadId, type: "whatsapp_meta_incoming", title: "Official WhatsApp message received",
+          description: text, createdBy: "meta_webhook", createdByName: contactName, createdAt: now
+        });
+        processed++;
+      }
+      for (const status of value.statuses || []) {
+        const wamid = String(status.id || "");
+        if (!wamid) continue;
+        const snap = await firestore.collection("whatsappMessages").where("messageId", "==", wamid).where("channel", "==", "whatsapp_business_platform").limit(1).get();
+        if (!snap.empty) await snap.docs[0].ref.set({ status: String(status.status || "unknown"), statusUpdatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      }
+    }
+  }
+  return { ok: true, processed };
+}
+async function sendMetaText(clientId, phone, text) {
+  const snap = await db().collection("metaWhatsAppClientConfigs").doc(clientId).get();
+  if (!snap.exists) throw new Error("Official Meta WhatsApp API is not configured for this client.");
+  const config = snap.data();
+  const phoneNumberId = String(config.phoneNumberId || "");
+  const accessToken = decryptMetaToken(config.accessTokenEncrypted);
+  const response = await fetch("https://graph.facebook.com/" + String(process.env.META_GRAPH_API_VERSION || "v23.0") + "/" + encodeURIComponent(phoneNumberId) + "/messages", {
+    method: "POST",
+    headers: { "Authorization": "Bearer " + accessToken, "Content-Type": "application/json" },
+    body: JSON.stringify({ messaging_product: "whatsapp", recipient_type: "individual", to: normalizePhone(phone), type: "text", text: { preview_url: false, body: text } })
+  });
+  const raw = await response.text();
+  let data = {};
+  try { data = JSON.parse(raw || "{}"); } catch { data = { raw }; }
+  if (!response.ok) throw new Error("Meta WhatsApp API failed (" + response.status + "): " + (data.error?.message || raw.slice(0, 300)));
+  const wamid = String(data.messages?.[0]?.id || ("meta_out_" + Date.now()));
+  const cid = conversationId(clientId, phone);
+  const now = FieldValue.serverTimestamp();
+  await db().collection("whatsappMessages").doc(safeDocId("meta:" + wamid)).set({
+    clientId, conversationId: cid, phone: normalizePhone(phone), text, body: text, type: "text",
+    direction: "outbound", fromCustomer: false, fromMe: true, status: "sent", messageId: wamid,
+    timestamp: now, createdAt: now, source: "whatsapp_meta", channel: "whatsapp_business_platform",
+    metaPhoneNumberId: phoneNumberId
+  });
+  await db().collection("whatsappConversations").doc(cid).set({
+    clientId, phone: normalizePhone(phone), lastMessage: text, lastMessageAt: now,
+    source: "whatsapp_meta", channel: "whatsapp_business_platform", updatedAt: now
+  }, { merge: true });
+  return { ok: true, messageId: wamid, status: "sent" };
+}
+
 const server = http.createServer(async (req, res) => {
   applyCors(req, res);
   if (req.method === "OPTIONS") {
@@ -248,6 +413,89 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   try {
+
+    if (req.method === "GET" && req.url.startsWith("/webhook/meta")) {
+      const url = new URL(req.url, "http://localhost");
+      const mode = url.searchParams.get("hub.mode");
+      const token = url.searchParams.get("hub.verify_token");
+      const challenge = url.searchParams.get("hub.challenge");
+      if (mode === "subscribe" && token && token === String(process.env.META_WEBHOOK_VERIFY_TOKEN || "")) {
+        res.writeHead(200, { "Content-Type": "text/plain" }); res.end(challenge || ""); return;
+      }
+      json(res, 403, { error: "Meta webhook verification failed." }); return;
+    }
+    if (req.method === "POST" && req.url === "/webhook/meta") {
+      const raw = await readBody(req);
+      const secret = String(process.env.META_APP_SECRET || "");
+      const signature = String(req.headers["x-hub-signature-256"] || "");
+      if (!secret || !signature.startsWith("sha256=")) { json(res, 401, { error: "Meta webhook signature is missing." }); return; }
+      const expected = "sha256=" + crypto.createHmac("sha256", secret).update(raw).digest("hex");
+      const a = Buffer.from(signature), b = Buffer.from(expected);
+      if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) { json(res, 401, { error: "Invalid Meta webhook signature." }); return; }
+      json(res, 200, await processMetaWebhook(JSON.parse(raw.toString("utf8") || "{}"))); return;
+    }
+    if (req.method === "GET" && req.url === "/api/whatsapp/meta/config") {
+      const user = await verifyClientUser(req);
+      const snap = await db().collection("metaWhatsAppClientConfigs").doc(user.clientId).get();
+      const data = snap.exists ? snap.data() : {};
+      json(res, 200, { configured: !!data?.phoneNumberId, phoneNumberId: data?.phoneNumberId || "", wabaId: data?.wabaId || "", displayPhoneNumber: data?.displayPhoneNumber || "", channel: "whatsapp_business_platform" }); return;
+    }
+    if (req.method === "POST" && req.url === "/api/whatsapp/meta/config") {
+      const user = await verifyClientUser(req);
+      if (!["admin", "owner"].includes(String(user.profile.role || "").toLowerCase())) { json(res, 403, { error: "Only a client admin can configure WhatsApp." }); return; }
+      const { body } = await readJson(req);
+      const phoneNumberId = String(body.phoneNumberId || "").trim();
+      const wabaId = String(body.wabaId || "").trim();
+      const accessToken = String(body.accessToken || "").trim();
+      const displayPhoneNumber = String(body.displayPhoneNumber || "").trim();
+      if (!phoneNumberId || !accessToken) throw new Error("Phone Number ID and access token are required.");
+      const oldConfig = await db().collection("metaWhatsAppClientConfigs").doc(user.clientId).get();
+      const encrypted = encryptMetaToken(accessToken);
+      const configData = { clientId: user.clientId, phoneNumberId, wabaId, displayPhoneNumber, accessTokenEncrypted: encrypted, configuredBy: user.decoded.uid, updatedAt: FieldValue.serverTimestamp(), provider: "meta_cloud_api" };
+      if (!oldConfig.exists) configData.createdAt = FieldValue.serverTimestamp();
+      await db().collection("metaWhatsAppClientConfigs").doc(user.clientId).set(configData, { merge: true });
+      await db().collection("metaWhatsAppPhoneNumbers").doc(phoneNumberId).set({ clientId: user.clientId, phoneNumberId, wabaId, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      json(res, 200, { ok: true, configured: true, phoneNumberId, wabaId, displayPhoneNumber }); return;
+    }
+    if (req.method === "POST" && req.url === "/api/whatsapp/meta/send") {
+      const user = await verifyClientUser(req);
+      const { body } = await readJson(req);
+      const phone = normalizePhone(body.phone || "");
+      const message = String(body.message || body.text || "").trim();
+      if (!phone || !message) throw new Error("phone and message are required.");
+      json(res, 200, await sendMetaText(user.clientId, phone, message)); return;
+    }
+    if (req.method === "POST" && req.url === "/api/whatsapp/openwa/connect") {
+      const user = await verifyClientUser(req);
+      if (!["admin", "owner"].includes(String(user.profile.role || "").toLowerCase())) { json(res, 403, { error: "Only a client admin can connect WhatsApp QR." }); return; }
+      json(res, 200, await createClientOpenWASession(user.clientId, user.decoded.uid)); return;
+    }
+    if (req.method === "GET" && req.url === "/api/whatsapp/openwa/status") {
+      const user = await verifyClientUser(req);
+      const session = await getClientOpenWASession(user.clientId);
+      if (!session) { json(res, 200, { connected: false, configured: false, status: "not_connected" }); return; }
+      const remote = await openwaRequest("/api/sessions/" + encodeURIComponent(session.sessionId));
+      const status = String(remote.status || remote.state || remote.session?.status || session.status || "unknown");
+      await db().collection("openwaSessions").doc(session.sessionId).set({ status, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      json(res, 200, { configured: true, connected: ["open", "connected", "ready"].includes(status.toLowerCase()), status, sessionId: session.sessionId }); return;
+    }
+    if (req.method === "GET" && req.url === "/api/whatsapp/openwa/qr") {
+      const user = await verifyClientUser(req);
+      const session = await getClientOpenWASession(user.clientId);
+      if (!session) { json(res, 404, { error: "Connect WhatsApp first to create a session." }); return; }
+      json(res, 200, { sessionId: session.sessionId, ...(await openwaRequest("/api/sessions/" + encodeURIComponent(session.sessionId) + "/qr")) }); return;
+    }
+    if (req.method === "POST" && req.url === "/api/whatsapp/openwa/send") {
+      const user = await verifyClientUser(req);
+      const { body } = await readJson(req);
+      const phone = normalizePhone(body.phone || "");
+      const message = String(body.message || body.text || "").trim();
+      if (!phone || !message) throw new Error("phone and message are required.");
+      const session = await getClientOpenWASession(user.clientId);
+      if (!session) throw new Error("Connect the client's OpenWA QR session first.");
+      json(res, 200, await processOutgoing({ clientId: user.clientId, phone, message, sessionId: session.sessionId })); return;
+    }
+
     if (req.method === "GET" && req.url === "/health") {
       json(res, 200, { ok: true, service: "sa-connect-openwa-webhook" });
       return;
