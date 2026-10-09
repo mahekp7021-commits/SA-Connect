@@ -458,6 +458,22 @@ const server = http.createServer(async (req, res) => {
       await db().collection("metaWhatsAppPhoneNumbers").doc(phoneNumberId).set({ clientId: user.clientId, phoneNumberId, wabaId, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
       json(res, 200, { ok: true, configured: true, phoneNumberId, wabaId, displayPhoneNumber }); return;
     }
+    if (req.method === "POST" && req.url === "/api/whatsapp/meta/disconnect") {
+      const user = await verifyClientUser(req);
+      if (!["admin", "owner"].includes(String(user.profile.role || "").toLowerCase())) { json(res, 403, { error: "Only a client admin can disconnect WhatsApp." }); return; }
+      const ref = db().collection("metaWhatsAppClientConfigs").doc(user.clientId);
+      const snap = await ref.get();
+      if (snap.exists) {
+        const phoneNumberId = String(snap.data()?.phoneNumberId || "");
+        await ref.delete();
+        if (phoneNumberId) {
+          const mapping = db().collection("metaWhatsAppPhoneNumbers").doc(phoneNumberId);
+          const mapped = await mapping.get();
+          if (mapped.exists && mapped.data()?.clientId === user.clientId) await mapping.delete();
+        }
+      }
+      json(res, 200, { ok: true, message: "Official Meta WhatsApp API credentials removed for this client." }); return;
+    }
     if (req.method === "POST" && req.url === "/api/whatsapp/meta/send") {
       const user = await verifyClientUser(req);
       const { body } = await readJson(req);
