@@ -241,6 +241,12 @@ async function getClientOpenWAApiConfig(clientId) {
   const snap = await db().collection("openwaApiClientConfigs").doc(clientId).get();
   if (!snap.exists) return null;
   const data = snap.data();
+  // Reuse the server-managed OpenWA credentials for the client's already-linked QR session.
+  // This avoids copying a global API key into each client configuration.
+  if (data.useServerCredentials === true) {
+    if (!OPENWA_BASE_URL || !OPENWA_API_KEY) throw new Error("Server-managed OpenWA credentials are not configured.");
+    return { ...data, baseUrl: data.baseUrl || OPENWA_BASE_URL, apiKey: OPENWA_API_KEY };
+  }
   return { ...data, apiKey: decryptMetaToken(data.apiKeyEncrypted) };
 }
 async function processOutgoing(body, sender = sendOpenWAText, source = "whatsapp_openwa", channel = "whatsapp_web_bridge") {
@@ -605,6 +611,39 @@ const server = http.createServer(async (req, res) => {
       }
       await configRef.set({ webhookConfigured, webhookWarning, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
       json(res, 200, { ok: true, configured: true, baseUrl, sessionId, status, webhookConfigured, webhookWarning, connected: ["open", "connected", "ready"].includes(status.toLowerCase()) }); return;
+    }
+    if (req.method === "POST" && req.url === "/api/whatsapp/openwa-api/connect-existing") {
+      const user = await verifyClientUser(req);
+      if (!["admin", "owner"].includes(String(user.profile.role || "").toLowerCase())) {
+        json(res, 403, { error: "Only a client admin can configure OpenWA API." }); return;
+      }
+      if (!OPENWA_BASE_URL || !OPENWA_API_KEY) throw new Error("Server-managed OpenWA credentials are not configured.");
+      const session = await getClientOpenWASession(user.clientId);
+      if (!session?.sessionId) throw new Error("Connect this client's WhatsApp QR session first.");
+      const remote = await openwaRequest("/api/sessions/" + encodeURIComponent(session.sessionId));
+      const status = String(remote.status || remote.state || remote.session?.status || session.status || "unknown");
+      const configRef = db().collection("openwaApiClientConfigs").doc(user.clientId);
+      await configRef.set({
+        clientId: user.clientId,
+        baseUrl: OPENWA_BASE_URL,
+        sessionId: session.sessionId,
+        useServerCredentials: true,
+        apiKeyEncrypted: FieldValue.delete(),
+        status,
+        provider: "openwa_api",
+        configuredBy: user.decoded.uid,
+        webhookConfigured: true,
+        webhookWarning: "",
+        updatedAt: FieldValue.serverTimestamp()
+      }, { merge: true });
+      json(res, 200, {
+        ok: true, configured: true, baseUrl: OPENWA_BASE_URL,
+        sessionId: session.sessionId, status,
+        connected: ["open", "connected", "ready"].includes(status.toLowerCase()),
+        webhookConfigured: true,
+        message: "Existing S&A Connect QR session linked to OpenWA API."
+      });
+      return;
     }
     if (req.method === "POST" && req.url === "/api/whatsapp/openwa-api/disconnect") {
       const user = await verifyClientUser(req);
