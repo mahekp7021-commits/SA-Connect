@@ -197,19 +197,44 @@ async function createClient(body) {
   return { clientId, uid: user.uid, businessName, ownerName, email, phone };
 }
 
+async function openwaRequestWith(baseUrl, apiKey, path, options = {}) {
+  if (!baseUrl || !apiKey) throw new Error("OpenWA server URL and API key are required.");
+  const response = await fetch(baseUrl + path, {
+    ...options,
+    headers: { "Content-Type": "application/json", "X-API-Key": apiKey, ...(options.headers || {}) }
+  });
+  const raw = await response.text();
+  let data = {};
+  try { data = JSON.parse(raw || "{}"); } catch { data = { raw }; }
+  if (!response.ok) throw new Error("OpenWA request failed (" + response.status + "): " + String(raw).slice(0, 300));
+  return data;
+}
 async function sendOpenWAText(sessionId, chatId, text) {
   if (!OPENWA_BASE_URL || !OPENWA_API_KEY) throw new Error("OPENWA_BASE_URL and OPENWA_API_KEY are required.");
-  const response = await fetch(`${OPENWA_BASE_URL}/api/sessions/${encodeURIComponent(sessionId)}/messages/send-text`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-API-Key": OPENWA_API_KEY },
-    body: JSON.stringify({ chatId, text })
+  return openwaRequestWith(OPENWA_BASE_URL, OPENWA_API_KEY, `/api/sessions/${encodeURIComponent(sessionId)}/messages/send-text`, {
+    method: "POST", body: JSON.stringify({ chatId, text })
   });
-  const responseText = await response.text();
-  if (!response.ok) throw new Error(`OpenWA send failed (${response.status}): ${responseText}`);
-  return JSON.parse(responseText || "{}");
 }
-
-async function processOutgoing(body) {
+function validateOpenWABaseUrl(value) {
+  let parsed;
+  try { parsed = new URL(String(value || "").trim()); } catch { throw new Error("Enter a valid OpenWA HTTPS URL."); }
+  if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error("OpenWA URL must be a clean public HTTPS URL without credentials, query, or fragment.");
+  const host = parsed.hostname.toLowerCase();
+  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal") || host === "metadata.google.internal") throw new Error("Private or local OpenWA URLs are not allowed.");
+  const ip = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (ip) {
+    const a=+ip[1], b=+ip[2];
+    if (a===10 || a===127 || a===0 || a===169&&b===254 || a===192&&b===168 || a===172&&b>=16&&b<=31 || a>=224) throw new Error("Private or reserved IP addresses are not allowed.");
+  }
+  return parsed.origin;
+}
+async function getClientOpenWAApiConfig(clientId) {
+  const snap = await db().collection("openwaApiClientConfigs").doc(clientId).get();
+  if (!snap.exists) return null;
+  const data = snap.data();
+  return { ...data, apiKey: decryptMetaToken(data.apiKeyEncrypted) };
+}
+async function processOutgoing(body, sender = sendOpenWAText, source = "whatsapp_openwa", channel = "whatsapp_web_bridge") {
   const clientId = String(body.clientId || "").trim();
   const phone = normalizePhone(body.phone || "");
   const text = String(body.message || body.text || "").trim();
@@ -217,7 +242,7 @@ async function processOutgoing(body) {
   if (!clientId || !phone || !text) throw new Error("clientId, phone and message are required.");
 
   const chatId = phone.includes("@") ? phone : `${phone}@c.us`;
-  const result = await sendOpenWAText(sessionId, chatId, text);
+  const result = await sender(sessionId, chatId, text);
   const firestore = db();
   const cid = conversationId(clientId, phone);
   const now = FieldValue.serverTimestamp();
@@ -227,7 +252,7 @@ async function processOutgoing(body) {
     clientId, conversationId: cid, phone, text, body: text, type: "text",
     direction: "outbound", fromCustomer: false, fromMe: true, status: "sent",
     messageId, timestamp: now, createdAt: now,
-    source: "whatsapp_openwa", channel: "whatsapp_web_bridge",
+    source, channel,
     openwaSessionId: sessionId
   });
 
@@ -267,16 +292,7 @@ function decryptMetaToken(value) {
   return Buffer.concat([decipher.update(Buffer.from(value.data, "hex")), decipher.final()]).toString("utf8");
 }
 async function openwaRequest(path, options = {}) {
-  if (!OPENWA_BASE_URL || !OPENWA_API_KEY) throw new Error("OpenWA service URL/API key is not configured on the server.");
-  const response = await fetch(OPENWA_BASE_URL + path, {
-    ...options,
-    headers: { "Content-Type": "application/json", "X-API-Key": OPENWA_API_KEY, ...(options.headers || {}) }
-  });
-  const raw = await response.text();
-  let data = {};
-  try { data = JSON.parse(raw || "{}"); } catch { data = { raw }; }
-  if (!response.ok) throw new Error("OpenWA request failed (" + response.status + "): " + raw.slice(0, 300));
-  return data;
+  return openwaRequestWith(OPENWA_BASE_URL, OPENWA_API_KEY, path, options);
 }
 async function getClientOpenWASession(clientId) {
   const snap = await db().collection("openwaSessions").where("clientId", "==", clientId).limit(1).get();
@@ -490,6 +506,49 @@ const server = http.createServer(async (req, res) => {
       if (!phone || !message) throw new Error("phone and message are required.");
       json(res, 200, await sendMetaText(user.clientId, phone, message)); return;
     }
+    if (req.method === "GET" && req.url === "/api/whatsapp/openwa-api/config") {
+      const user = await verifyClientUser(req);
+      const snap = await db().collection("openwaApiClientConfigs").doc(user.clientId).get();
+      const data = snap.exists ? snap.data() : {};
+      json(res, 200, { configured: !!data?.baseUrl, baseUrl: data?.baseUrl || "", sessionId: data?.sessionId || "", status: data?.status || "not_configured", channel: "whatsapp_openwa_api" }); return;
+    }
+    if (req.method === "POST" && req.url === "/api/whatsapp/openwa-api/config") {
+      const user = await verifyClientUser(req);
+      if (!["admin", "owner"].includes(String(user.profile.role || "").toLowerCase())) { json(res, 403, { error: "Only a client admin can configure OpenWA API." }); return; }
+      const { body } = await readJson(req);
+      const baseUrl = validateOpenWABaseUrl(body.baseUrl);
+      const apiKey = String(body.apiKey || "").trim();
+      const sessionId = String(body.sessionId || "").trim();
+      if (!apiKey || !sessionId || sessionId.length > 128 || !/^[A-Za-z0-9._-]+$/.test(sessionId)) throw new Error("A valid API key and session ID are required.");
+      const remote = await openwaRequestWith(baseUrl, apiKey, "/api/sessions/" + encodeURIComponent(sessionId));
+      const status = String(remote.status || remote.state || remote.session?.status || "unknown");
+      const encrypted = encryptMetaToken(apiKey);
+      await db().collection("openwaApiClientConfigs").doc(user.clientId).set({
+        clientId: user.clientId, baseUrl, sessionId, apiKeyEncrypted: encrypted,
+        status, provider: "openwa_api", configuredBy: user.decoded.uid,
+        updatedAt: FieldValue.serverTimestamp()
+      }, { merge: true });
+      json(res, 200, { ok: true, configured: true, baseUrl, sessionId, status, connected: ["open", "connected", "ready"].includes(status.toLowerCase()) }); return;
+    }
+    if (req.method === "POST" && req.url === "/api/whatsapp/openwa-api/disconnect") {
+      const user = await verifyClientUser(req);
+      if (!["admin", "owner"].includes(String(user.profile.role || "").toLowerCase())) { json(res, 403, { error: "Only a client admin can disconnect OpenWA API." }); return; }
+      await db().collection("openwaApiClientConfigs").doc(user.clientId).delete();
+      json(res, 200, { ok: true, message: "OpenWA API connection removed." }); return;
+    }
+    if (req.method === "POST" && req.url === "/api/whatsapp/openwa-api/send") {
+      const user = await verifyClientUser(req);
+      const { body } = await readJson(req);
+      const phone = normalizePhone(body.phone || "");
+      const message = String(body.message || body.text || "").trim();
+      if (!phone || !message) throw new Error("phone and message are required.");
+      const config = await getClientOpenWAApiConfig(user.clientId);
+      if (!config) throw new Error("Configure OpenWA API for this client first.");
+      const chatId = phone.includes("@") ? phone : `${phone}@c.us`;
+      const sender = async (sessionId, target, text) => openwaRequestWith(config.baseUrl, config.apiKey, `/api/sessions/${encodeURIComponent(sessionId)}/messages/send-text`, { method: "POST", body: JSON.stringify({ chatId: target, text }) });
+      json(res, 200, await processOutgoing({ clientId: user.clientId, phone, message, sessionId: config.sessionId }, sender, "whatsapp_openwa_api", "whatsapp_openwa_api")); return;
+    }
+
     if (req.method === "POST" && req.url === "/api/whatsapp/openwa/connect") {
       const user = await verifyClientUser(req);
       if (!["admin", "owner"].includes(String(user.profile.role || "").toLowerCase())) { json(res, 403, { error: "Only a client admin can connect WhatsApp QR." }); return; }
