@@ -311,25 +311,61 @@ async function getClientOpenWASession(clientId) {
 async function createClientOpenWASession(clientId, uid) {
   const existing = await getClientOpenWASession(clientId);
   if (existing) return existing;
-  if (!WEBHOOK_SECRET) throw new Error("OPENWA_WEBHOOK_SECRET is not configured.");
-  const publicBase = String(process.env.PUBLIC_API_BASE_URL || "").replace(/\/$/, "");
-  if (!publicBase) throw new Error("PUBLIC_API_BASE_URL must be set to this Render webhook service URL.");
-  const safeClient = clientId.toLowerCase().replace(/[^a-z0-9_-]/g, "-").slice(0, 24) || "client";
-  const sessionId = "sanc-" + safeClient + "-" + crypto.randomBytes(3).toString("hex");
-  await openwaRequest("/api/sessions", { method: "POST", body: JSON.stringify({ id: sessionId, name: "S&A Connect " + clientId }) });
-  const webhook = await openwaRequest("/api/sessions/" + encodeURIComponent(sessionId) + "/webhooks", {
+
+  const safeClient = clientId.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").slice(0, 24) || "client";
+  // OpenWA v0.24 creates its own UUID session id. The POST body accepts "name", not a caller-supplied "id".
+  const sessionName = ("sanc-" + safeClient + "-" + crypto.randomBytes(3).toString("hex")).slice(0, 50);
+  const created = await openwaRequest("/api/sessions", {
     method: "POST",
-    body: JSON.stringify({
-      url: publicBase + "/webhook/openwa",
-      events: ["message.received", "message.ack", "session.disconnected"],
-      secret: WEBHOOK_SECRET
-    })
+    body: JSON.stringify({ name: sessionName })
   });
-  await db().collection("openwaSessions").doc(sessionId).set({
-    clientId, sessionId, status: "connecting", webhookId: String(webhook.id || ""),
+  const sessionId = String(created.id || created.sessionId || created.session?.id || "").trim();
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(sessionId)) {
+    throw new Error("OpenWA created a session but did not return a valid UUID session id. Response fields: " + Object.keys(created || {}).join(", "));
+  }
+
+  const sessionRef = db().collection("openwaSessions").doc(sessionId);
+  const record = {
+    clientId, sessionId, sessionName, status: String(created.status || "created"),
     createdBy: uid, createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp()
+  };
+  // Persist tenant mapping immediately so a webhook setup/start failure does not orphan the session.
+  await sessionRef.set(record, { merge: true });
+
+  let webhookId = "";
+  let webhookWarning = "";
+  const publicBase = String(process.env.PUBLIC_API_BASE_URL || "").replace(/\/$/, "");
+  if (WEBHOOK_SECRET && publicBase) {
+    try {
+      const webhook = await openwaRequest("/api/sessions/" + encodeURIComponent(sessionId) + "/webhooks", {
+        method: "POST",
+        body: JSON.stringify({
+          url: publicBase + "/webhook/openwa",
+          events: ["message.received", "message.ack", "session.disconnected"],
+          secret: WEBHOOK_SECRET
+        })
+      });
+      webhookId = String(webhook.id || webhook.webhookId || "");
+      await sessionRef.set({ webhookId, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+    } catch (error) {
+      // QR pairing should remain available even if inbound webhook setup needs separate repair.
+      webhookWarning = String(error?.message || error).slice(0, 300);
+      await sessionRef.set({ webhookWarning, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+    }
+  } else {
+    webhookWarning = !WEBHOOK_SECRET ? "OPENWA_WEBHOOK_SECRET is not configured." : "PUBLIC_API_BASE_URL is not configured.";
+    await sessionRef.set({ webhookWarning, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+  }
+
+  // OpenWA sessions are created in CREATED state; explicitly start the engine so the QR is generated.
+  const started = await openwaRequest("/api/sessions/" + encodeURIComponent(sessionId) + "/start", {
+    method: "POST",
+    body: JSON.stringify({})
   });
-  return { sessionId, clientId, status: "connecting", webhookId: String(webhook.id || "") };
+  const status = String(started.status || started.state || started.session?.status || "connecting");
+  await sessionRef.set({ status, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+
+  return { sessionId, clientId, sessionName, status, webhookId, ...(webhookWarning ? { webhookWarning } : {}) };
 }
 async function processMetaWebhook(payload) {
   const firestore = db();
