@@ -12,6 +12,10 @@
     ],
     "rewrites": [
       {
+        "source": "/whatsapp",
+        "destination": "/whatsapp.html"
+      },
+      {
         "source": "/admin",
         "destination": "/admin.html"
       },
