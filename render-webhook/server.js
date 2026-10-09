@@ -70,11 +70,12 @@ function verifyOpenWASignature(rawBody, signature) {
 }
 
 async function resolveClientId(payload, explicitClientId = "") {
-  const sessionId = String(payload.sessionId || payload.data?.sessionId || DEFAULT_SESSION_ID).trim();
+  const payloadSessionId = String(payload.sessionId || payload.data?.sessionId || "").trim();
+  const sessionId = payloadSessionId || DEFAULT_SESSION_ID;
   if (explicitClientId) {
     const apiConfig = await db().collection("openwaApiClientConfigs").doc(explicitClientId).get();
     if (apiConfig.exists && apiConfig.data()?.clientId === explicitClientId &&
-        (!sessionId || sessionId === String(apiConfig.data()?.sessionId || ""))) return explicitClientId;
+        (!payloadSessionId || payloadSessionId === String(apiConfig.data()?.sessionId || ""))) return explicitClientId;
     throw new Error("OpenWA API webhook does not match the configured client session.");
   }
   const snap = await db().collection("openwaSessions").doc(sessionId).get();
