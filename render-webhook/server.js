@@ -451,10 +451,20 @@ const server = http.createServer(async (req, res) => {
       const displayPhoneNumber = String(body.displayPhoneNumber || "").trim();
       if (!phoneNumberId || !accessToken) throw new Error("Phone Number ID and access token are required.");
       const oldConfig = await db().collection("metaWhatsAppClientConfigs").doc(user.clientId).get();
+      const existingPhoneMap = await db().collection("metaWhatsAppPhoneNumbers").doc(phoneNumberId).get();
+      if (existingPhoneMap.exists && existingPhoneMap.data()?.clientId !== user.clientId) {
+        throw new Error("This Meta Phone Number ID is already linked to another S&A Connect client.");
+      }
       const encrypted = encryptMetaToken(accessToken);
       const configData = { clientId: user.clientId, phoneNumberId, wabaId, displayPhoneNumber, accessTokenEncrypted: encrypted, configuredBy: user.decoded.uid, updatedAt: FieldValue.serverTimestamp(), provider: "meta_cloud_api" };
       if (!oldConfig.exists) configData.createdAt = FieldValue.serverTimestamp();
       await db().collection("metaWhatsAppClientConfigs").doc(user.clientId).set(configData, { merge: true });
+      const previousPhoneId = String(oldConfig.data()?.phoneNumberId || "");
+      if (previousPhoneId && previousPhoneId !== phoneNumberId) {
+        const previousMap = db().collection("metaWhatsAppPhoneNumbers").doc(previousPhoneId);
+        const previousSnap = await previousMap.get();
+        if (previousSnap.exists && previousSnap.data()?.clientId === user.clientId) await previousMap.delete();
+      }
       await db().collection("metaWhatsAppPhoneNumbers").doc(phoneNumberId).set({ clientId: user.clientId, phoneNumberId, wabaId, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
       json(res, 200, { ok: true, configured: true, phoneNumberId, wabaId, displayPhoneNumber }); return;
     }
@@ -545,8 +555,14 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "POST" && req.url === "/api/whatsapp/send") {
+      const user = await verifyClientUser(req);
       const { body } = await readJson(req);
-      json(res, 200, await processOutgoing(body));
+      const phone = normalizePhone(body.phone || body.to || "");
+      const message = String(body.message || body.text || "").trim();
+      if (!phone || !message) throw new Error("phone and message are required.");
+      const session = await getClientOpenWASession(user.clientId);
+      if (!session) throw new Error("Connect the client's OpenWA QR session first.");
+      json(res, 200, await processOutgoing({ clientId: user.clientId, phone, message, sessionId: session.sessionId }));
       return;
     }
 
