@@ -310,7 +310,23 @@ async function getClientOpenWASession(clientId) {
 }
 async function createClientOpenWASession(clientId, uid) {
   const existing = await getClientOpenWASession(clientId);
-  if (existing) return existing;
+  if (existing) {
+    // "Create / Resume" must also recover sessions whose first start timed out.
+    const remote = await openwaRequest("/api/sessions/" + encodeURIComponent(existing.sessionId));
+    const currentStatus = String(remote.status || remote.state || remote.session?.status || existing.status || "").toLowerCase();
+    if (["created", "disconnected", "failed", "stopped"].includes(currentStatus)) {
+      const started = await openwaRequest("/api/sessions/" + encodeURIComponent(existing.sessionId) + "/start", {
+        method: "POST",
+        body: JSON.stringify({})
+      });
+      const status = String(started.status || started.state || started.session?.status || "connecting");
+      await db().collection("openwaSessions").doc(existing.sessionId).set({
+        status, updatedAt: FieldValue.serverTimestamp()
+      }, { merge: true });
+      return { ...existing, status, resumed: true };
+    }
+    return { ...existing, status: String(remote.status || remote.state || existing.status || "unknown") };
+  }
 
   const safeClient = clientId.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").slice(0, 24) || "client";
   // OpenWA v0.24 creates its own UUID session id. The POST body accepts "name", not a caller-supplied "id".
