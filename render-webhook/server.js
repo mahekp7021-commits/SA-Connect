@@ -69,25 +69,34 @@ function verifyOpenWASignature(rawBody, signature) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-async function resolveClientId(payload) {
+async function resolveClientId(payload, explicitClientId = "") {
   const sessionId = String(payload.sessionId || payload.data?.sessionId || DEFAULT_SESSION_ID).trim();
+  if (explicitClientId) {
+    const apiConfig = await db().collection("openwaApiClientConfigs").doc(explicitClientId).get();
+    if (apiConfig.exists && apiConfig.data()?.clientId === explicitClientId &&
+        (!sessionId || sessionId === String(apiConfig.data()?.sessionId || ""))) return explicitClientId;
+    throw new Error("OpenWA API webhook does not match the configured client session.");
+  }
   const snap = await db().collection("openwaSessions").doc(sessionId).get();
   if (snap.exists && snap.data()?.clientId) return String(snap.data().clientId);
-  // Never route an unmapped session to another tenant. Map every session explicitly.
   throw new Error("No client is mapped to OpenWA session " + sessionId + ".");
 }
 
-async function processIncoming(payload) {
+async function processIncoming(payload, explicitClientId = "") {
   if (payload?.event !== "message.received") return { ignored: true };
 
   const data = payload.data || {};
   const phone = normalizePhone(data.author || data.from || "");
   if (!phone) return { ignored: true, reason: "missing_sender" };
 
-  const clientId = await resolveClientId(payload);
+  const clientId = await resolveClientId(payload, explicitClientId);
+  const apiProvider = !!explicitClientId;
+  const source = apiProvider ? "whatsapp_openwa_api" : "whatsapp_openwa";
+  const channel = apiProvider ? "whatsapp_openwa_api" : "whatsapp_web_bridge";
   const text = messageText(data);
   const cid = conversationId(clientId, phone);
-  const messageId = String(data.id || payload.idempotencyKey || payload.deliveryId || `${cid}_${Date.now()}`);
+  const rawMessageId = String(data.id || payload.idempotencyKey || payload.deliveryId || `${cid}_${Date.now()}`);
+  const messageId = apiProvider ? clientId + "_" + rawMessageId : rawMessageId;
   const firestore = db();
   const messageRef = firestore.collection("whatsappMessages").doc(safeDocId(messageId));
 
@@ -100,16 +109,15 @@ async function processIncoming(payload) {
     clientId, conversationId: cid, phone, text, body: text,
     type: String(data.type || "text"), direction: "inbound",
     fromCustomer: true, fromMe: false, status: "received", messageId,
-    timestamp: now, createdAt: now, source: "whatsapp_openwa",
-    channel: "whatsapp_web_bridge",
-    openwaSessionId: String(payload.sessionId || DEFAULT_SESSION_ID),
+    timestamp: now, createdAt: now, source, channel,
+    openwaSessionId: String(payload.sessionId || data.sessionId || DEFAULT_SESSION_ID),
     openwaDeliveryId: String(payload.deliveryId || "")
   });
 
   await firestore.collection("whatsappConversations").doc(cid).set({
     clientId, phone, contactName, lastMessage: text,
     lastMessageAt: now, unreadCount: FieldValue.increment(1),
-    source: "whatsapp_openwa", channel: "whatsapp_web_bridge", updatedAt: now
+    source, channel, updatedAt: now
   }, { merge: true });
 
   const leads = await firestore.collection("leads")
@@ -120,15 +128,15 @@ async function processIncoming(payload) {
     leadId = leads.docs[0].id;
     await leads.docs[0].ref.set({
       name: contactName || leads.docs[0].data()?.name || phone,
-      phone, source: "whatsapp_openwa", channel: "whatsapp_web_bridge",
+      phone, source, channel,
       requirement: text || leads.docs[0].data()?.requirement || "",
       message: text || leads.docs[0].data()?.message || "", updatedAt: now
     }, { merge: true });
   } else {
     const lead = await firestore.collection("leads").add({
       clientId, name: contactName || phone, phone, email: "", state: "", city: "",
-      requirement: text, message: text, source: "whatsapp_openwa",
-      channel: "whatsapp_web_bridge", status: "new", notes: "", tag: "",
+      requirement: text, message: text, source,
+      channel, status: "new", notes: "", tag: "",
       priority: "normal", budget: "", leadType: "whatsapp",
       createdAt: now, updatedAt: now
     });
@@ -258,7 +266,7 @@ async function processOutgoing(body, sender = sendOpenWAText, source = "whatsapp
 
   await firestore.collection("whatsappConversations").doc(cid).set({
     clientId, phone, lastMessage: text, lastMessageAt: now,
-    source: "whatsapp_openwa", channel: "whatsapp_web_bridge", updatedAt: now
+    source, channel, updatedAt: now
   }, { merge: true });
 
   return { ok: true, clientId, conversationId: cid, messageId, openwa: result };
@@ -523,12 +531,27 @@ const server = http.createServer(async (req, res) => {
       const remote = await openwaRequestWith(baseUrl, apiKey, "/api/sessions/" + encodeURIComponent(sessionId));
       const status = String(remote.status || remote.state || remote.session?.status || "unknown");
       const encrypted = encryptMetaToken(apiKey);
-      await db().collection("openwaApiClientConfigs").doc(user.clientId).set({
+      const configRef = db().collection("openwaApiClientConfigs").doc(user.clientId);
+      await configRef.set({
         clientId: user.clientId, baseUrl, sessionId, apiKeyEncrypted: encrypted,
         status, provider: "openwa_api", configuredBy: user.decoded.uid,
         updatedAt: FieldValue.serverTimestamp()
       }, { merge: true });
-      json(res, 200, { ok: true, configured: true, baseUrl, sessionId, status, connected: ["open", "connected", "ready"].includes(status.toLowerCase()) }); return;
+      let webhookConfigured = false, webhookWarning = "";
+      const publicBase = String(process.env.PUBLIC_API_BASE_URL || "").replace(/\/$/, "");
+      if (WEBHOOK_SECRET && publicBase) {
+        try {
+          await openwaRequestWith(baseUrl, apiKey, "/api/sessions/" + encodeURIComponent(sessionId) + "/webhooks", {
+            method: "POST",
+            body: JSON.stringify({ url: publicBase + "/webhook/openwa-api/" + encodeURIComponent(user.clientId), events: ["message.received", "message.ack", "session.disconnected"], secret: WEBHOOK_SECRET })
+          });
+          webhookConfigured = true;
+        } catch (e) { webhookWarning = "API saved, but inbound webhook registration failed: " + String(e.message || e).slice(0, 220); }
+      } else {
+        webhookWarning = "Set PUBLIC_API_BASE_URL and OPENWA_WEBHOOK_SECRET to receive inbound messages.";
+      }
+      await configRef.set({ webhookConfigured, webhookWarning, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      json(res, 200, { ok: true, configured: true, baseUrl, sessionId, status, webhookConfigured, webhookWarning, connected: ["open", "connected", "ready"].includes(status.toLowerCase()) }); return;
     }
     if (req.method === "POST" && req.url === "/api/whatsapp/openwa-api/disconnect") {
       const user = await verifyClientUser(req);
@@ -585,15 +608,19 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === "POST" && req.url.startsWith("/webhook/openwa-api/")) {
+      const raw = await readBody(req);
+      if (!verifyOpenWASignature(raw, req.headers["x-openwa-signature"])) { json(res, 401, { error: "Invalid OpenWA signature." }); return; }
+      const clientId = decodeURIComponent(req.url.slice("/webhook/openwa-api/".length).split("?")[0]);
+      if (!clientId || clientId.includes("/")) { json(res, 400, { error: "Invalid client webhook route." }); return; }
+      const payload = JSON.parse(raw.toString("utf8") || "{}");
+      json(res, 200, await processIncoming(payload, clientId)); return;
+    }
     if (req.method === "POST" && req.url === "/webhook/openwa") {
       const raw = await readBody(req);
-      if (!verifyOpenWASignature(raw, req.headers["x-openwa-signature"])) {
-        json(res, 401, { error: "Invalid OpenWA signature." });
-        return;
-      }
+      if (!verifyOpenWASignature(raw, req.headers["x-openwa-signature"])) { json(res, 401, { error: "Invalid OpenWA signature." }); return; }
       const payload = JSON.parse(raw.toString("utf8") || "{}");
-      json(res, 200, await processIncoming(payload));
-      return;
+      json(res, 200, await processIncoming(payload)); return;
     }
 
     if (req.method === "GET" && req.url === "/api/admin/clients") {
