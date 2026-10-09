@@ -678,6 +678,69 @@ const server = http.createServer(async (req, res) => {
       await db().collection("openwaSessions").doc(session.sessionId).set({ status, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
       json(res, 200, { configured: true, connected: ["open", "connected", "ready"].includes(status.toLowerCase()), status, sessionId: session.sessionId }); return;
     }
+    if (req.method === "POST" && req.url === "/api/whatsapp/openwa/pairing-code") {
+      const user = await verifyClientUser(req);
+      if (!["admin", "owner"].includes(String(user.profile.role || "").toLowerCase())) {
+        json(res, 403, { error: "Only a client admin can pair WhatsApp." }); return;
+      }
+      const { body } = await readJson(req);
+      const phoneNumber = normalizePhone(body.phoneNumber || "");
+      if (!/^\d{8,15}$/.test(phoneNumber)) {
+        json(res, 400, { error: "Enter the WhatsApp number with country code, digits only (example: 919876543210)." }); return;
+      }
+
+      // Reuse this client's session; create one only when no session exists.
+      let session = await getClientOpenWASession(user.clientId);
+      if (!session) {
+        await createClientOpenWASession(user.clientId, user.decoded.uid);
+        session = await getClientOpenWASession(user.clientId);
+      }
+      if (!session?.sessionId) throw new Error("OpenWA session could not be created.");
+
+      let remote = await openwaRequest("/api/sessions/" + encodeURIComponent(session.sessionId));
+      let status = String(remote.status || remote.state || remote.session?.status || session.status || "").toLowerCase();
+      if (["open", "connected", "ready"].includes(status)) {
+        json(res, 409, { error: "This WhatsApp session is already connected. No pairing code is needed.", connected: true, sessionId: session.sessionId, status }); return;
+      }
+      if (["created", "stopped", "disconnected", "error"].includes(status)) {
+        await openwaRequest("/api/sessions/" + encodeURIComponent(session.sessionId) + "/start", { method: "POST", body: JSON.stringify({}) });
+      }
+
+      // OpenWA v0.24 exposes pairing code only after the session reaches qr_ready.
+      const deadline = Date.now() + 25000;
+      while (Date.now() < deadline) {
+        remote = await openwaRequest("/api/sessions/" + encodeURIComponent(session.sessionId));
+        status = String(remote.status || remote.state || remote.session?.status || "").toLowerCase();
+        if (status === "qr_ready") break;
+        if (["open", "connected", "ready"].includes(status)) {
+          json(res, 409, { error: "This WhatsApp session connected before a pairing code was needed.", connected: true, sessionId: session.sessionId, status }); return;
+        }
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      if (status !== "qr_ready") {
+        json(res, 409, { error: "OpenWA is not ready for phone-number pairing yet. Current status: " + (status || "unknown") + ". Try again in a few seconds.", sessionId: session.sessionId, status }); return;
+      }
+
+      try {
+        const pairing = await openwaRequest("/api/sessions/" + encodeURIComponent(session.sessionId) + "/pairing-code", {
+          method: "POST", body: JSON.stringify({ phoneNumber })
+        });
+        const pairingCode = String(pairing.pairingCode || pairing.code || "").trim();
+        if (!pairingCode) throw new Error("OpenWA did not return a pairing code.");
+        await db().collection("openwaSessions").doc(session.sessionId).set({
+          phoneNumber, status: String(pairing.status || "qr_ready"),
+          pairingRequestedAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp()
+        }, { merge: true });
+        json(res, 200, { ok: true, sessionId: session.sessionId, pairingCode, status: pairing.status || "qr_ready", instructions: "On the same WhatsApp account, open Settings > Linked Devices > Link a device > Link with phone number, then enter this code." }); return;
+      } catch (error) {
+        const message = String(error.message || "Pairing code request failed.");
+        if (/404|not found|cannot post/i.test(message)) {
+          json(res, 501, { error: "This OpenWA server does not expose the pairing-code endpoint. Update the existing OpenWA service before enabling this flow." }); return;
+        }
+        throw error;
+      }
+    }
+
     if (req.method === "GET" && req.url === "/api/whatsapp/openwa/qr") {
       const user = await verifyClientUser(req);
       const session = await getClientOpenWASession(user.clientId);
