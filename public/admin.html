@@ -103,7 +103,16 @@ function renderClients(clients){
     <div class="client">
       <div class="client-top"><div><div class="client-name">${escapeHtml(c.businessName||"Unnamed Business")}</div><div class="client-meta">${escapeHtml(c.ownerName||"")} · ${escapeHtml(c.email||"")}</div></div><span class="status">${escapeHtml(c.status||"active")}</span></div>
       <div style="margin-top:12px"><span class="id">${escapeHtml(c.clientId||c.id||"")}</span></div>
-      <div class="client-meta">${escapeHtml(c.phone||"No phone")}</div>
+      <div class="client-meta">Phone: ${escapeHtml(c.phone||"Not provided")}</div>
+      <div style="margin-top:14px;padding:13px;border-radius:12px;background:#f8fafc;border:1px solid #e2e8f0">
+        <div style="font-weight:800;font-size:13px;margin-bottom:8px">CRM Account</div>
+        <div class="client-meta">Username / Email: <strong>${escapeHtml(c.email||"Not available")}</strong></div>
+        <div class="client-meta">Password: Hidden for security — use password reset</div>
+        <div style="font-weight:800;font-size:13px;margin:12px 0 8px">OpenWA Connection</div>
+        <div class="client-meta">Server: ${escapeHtml(c.openwa?.baseUrl||"Not configured")}</div>
+        <div class="client-meta">Session ID: <span class="id">${escapeHtml(c.openwa?.sessionId||"Not connected")}</span></div>
+        <div class="client-meta">Status: <strong>${escapeHtml(c.openwa?.status||"not_connected")}</strong> · ${c.openwa?.connected?"Connected":(c.openwa?.configured?"Configured":"Not configured")}</div>
+      </div>
     </div>`).join("");
 }
 function escapeHtml(v){return String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]))}
